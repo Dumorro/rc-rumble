@@ -151,8 +151,6 @@ const BASE = {
     /** Progressive bump stop: engages past this fraction of travel. */
     bumpStopStart: 0.84,
     bumpStopRate: 9.0,    // × spring rate at full compression
-    /** Extra force pulling a fully-drooped wheel back up (keeps it planted). */
-    droopRate: 0.10,
     /** Static camber (rad, negative = top of tyre leans in). */
     camberStatic: -0.030,
     /** Camber gained per metre of compression. */

@@ -136,27 +136,30 @@ export class AeroBody {
 
     // ── downforce ──────────────────────────────────────────────────────
     const onGround = car.wheelsOnGround > 0;
-    if (speed > 0.45 && this.downforceK > 0) {
-      let df = this.downforceK * speed * speed * dfScale;
-      if (onGround) {
-        df *= 1 + this.groundEffect * clamp01(car.suspension.squat() * 1.25);
-      } else {
-        // Airborne, wings stalled and no ground effect. Keep this small: a
-        // high-downforce car doing 10 m/s can otherwise generate more than its
-        // own weight mid-jump, which flattens the arc and — because the wing
-        // sits behind the COM — pitches the nose skyward at 30 rad/s².
-        df *= 0.22;
-      }
+    if (onGround && speed > 0.45 && this.downforceK > 0) {
+      const df = this.downforceK * speed * speed * dfScale
+        * (1 + this.groundEffect * clamp01(car.suspension.squat() * 1.25));
       this.downforce = df;
       _force.copy(_up).multiplyScalar(-df);
-      if (onGround) {
-        _point.set(0, 0, this.downforceZ).applyQuaternion(body.quaternion).add(body.position);
-        body.applyForce(_force, _point);
-      } else {
-        // No moment arm in the air — the attitude belongs to the player.
-        body.applyForce(_force);
-      }
+      _point.set(0, 0, this.downforceZ).applyQuaternion(body.quaternion).add(body.position);
+      body.applyForce(_force, _point);
     } else {
+      // AIRBORNE DOWNFORCE IS ZERO, ON PURPOSE.
+      //
+      // This used to apply 22 % of the on-ground figure at the COM. The moment
+      // arm was already removed — correctly — so it produced no pitch couple,
+      // and at a glance it looked harmless. It was not: it is a downward force
+      // in free flight, so it lands directly on the effective gravity that
+      // every track author sized their jump geometry against. Measured over a
+      // 0.45 s hop at 7 m/s with no driver input, it was worth +1.66 % on
+      // stomper and +7.94 % on needle — and because downforceK is per car, the
+      // SAME ramp threw each car a different distance for a reason no level
+      // designer could see. With this at zero the airborne figure is 19.599
+      // against a documented 19.600 on all eight cars.
+      //
+      // It is also what the physics says: a stalled wing off the ground, with
+      // no ground effect under it, makes no downforce. Locked by the airborne
+      // self-tests, which run the REAL car rather than stubbing aero out.
       this.downforce = 0;
     }
 

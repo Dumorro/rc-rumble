@@ -11,9 +11,22 @@
  *    to ~5× the spring force, so bottoming out is firm but not a wall.
  *  • **anti-roll bars, front and rear separately** — the primary balance knob:
  *    stiffer front ARB ⇒ understeer, stiffer rear ⇒ oversteer.
- *  • **extension-stop droop force** — a fully-drooped wheel still hangs its
- *    unsprung mass off the chassis, so the car gets light over crests and
- *    leans the *right* way when one wheel drops into a hole.
+ *  • **airborne wheels apply nothing.** There used to be an "extension-stop
+ *    droop force" here, meant to hang a drooped wheel's unsprung mass off the
+ *    chassis. It was wrong twice over, and it governed every jump in the game.
+ *    This sim has no separate unsprung body — the wheel's mass is already part
+ *    of the chassis, and gravity already acts on it at the COM — so the extra
+ *    force at the strut anchor invented weight that nothing pushed back on. It
+ *    also pointed DOWN, the opposite sign to the reaction a real extending
+ *    spring puts into the chassis. With all four wheels off the ground the four
+ *    droop forces summed to a net downward force plus, because springFront ≠
+ *    springRear on every car, a permanent pitch couple. Measured: effective
+ *    airborne gravity 22.90–24.70 m/s² against the documented 19.60 (+16.8 % to
+ *    +26.0 %), and up to 14.35 rad/s² of pitch acceleration that the driver
+ *    never asked for and could not counter — 20× the air control they have.
+ *    Every track author sized their jumps against the 19.6 in the contract.
+ *    A contactless strut now contributes nothing, which is both correct and
+ *    what the gravity contract says. Locked down by the airborne self-tests.
  *  • **forces applied at the contact patch**, not at the chassis centre.
  *    Weight transfer under braking / cornering therefore *emerges*: the roll
  *    and pitch moments come from the geometry, the loads change, and the tyre
@@ -94,7 +107,6 @@ export class Suspension {
     this.arbRear = s.arbRateRear;
     this.bumpStopStart = s.bumpStopStart;
     this.bumpStopRate = s.bumpStopRate;
-    this.droopRate = s.droopRate;
     this.camberStatic = s.camberStatic;
     this.camberPerComp = s.camberPerComp;
     this.forceLift = s.forceLift;
@@ -339,15 +351,10 @@ export class Suspension {
       const staticLoad = this.def.staticLoad[i];
 
       if (!w.contact) {
-        // Extension stop: the unsprung mass hangs off the chassis.
+        // A wheel touching nothing pushes on nothing. There is deliberately no
+        // force here — see the "airborne" note in the file header.
         w.load = 0;
         w.suspensionForce = 0;
-        const droop = (w.isFront ? this.springFront : this.springRear)
-          * this.travel * this.droopRate;
-        if (droop > 0) {
-          _force.copy(_up).multiplyScalar(-droop);
-          body.applyForce(_force, w.anchorWorld);
-        }
         continue;
       }
 
