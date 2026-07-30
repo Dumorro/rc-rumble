@@ -186,6 +186,81 @@ Surface ids (canonical, referenced by physics/audio/fx — do not renumber):
 | 14 | glass | 1.02 | reflective |
 | 15 | oil_slick | 0.10 | hazard |
 
+### `Car` (vehicle/Car.js) — read by camera, fx, audio, ui, gameplay, ai
+
+This is a **hard contract**: other systems are written against it before the vehicle
+code exists. Fields must be present and up to date every frame.
+
+```js
+{
+  id: 0,                       // stable index, 0..7
+  isPlayer: false,
+  def: CarDef,                 // { id:'toyeca', name, class:'rookie'|'amateur'|'advanced'|'semi-pro'|'pro'|'super',
+                               //   drive:'4wd'|'rwd'|'fwd', mass, topSpeed, accel, weightFront,
+                               //   chassis:'plastic'|'glass'|'metal', colorPrimary, colorSecondary }
+  body: RigidBody,             // authoritative simulation state
+  group: THREE.Group,          // visual root (interpolated — never read for logic)
+  wheels: [Wheel x4],          // FL, FR, RL, RR
+
+  // ── live telemetry, updated every fixedUpdate ──
+  speed: 0,                    // m/s along forward axis (signed)
+  speedKmh: 0,                 // display value, already scaled to feel like a real car
+  rpm: 0, gear: 1, engineLoad: 0..1,
+  throttle: 0..1, brake: 0..1, steer: -1..1, handbrake: 0..1,
+  slipAngle: 0,                // radians, chassis velocity vs heading
+  driftFactor: 0..1,           // 0 = gripping, 1 = full slide
+  lateralG: 0, longitudinalG: 0,
+  wheelsOnGround: 0..4,
+  airborne: false, airTime: 0, lastLandImpact: 0,
+  upsideDown: false, stuckTime: 0,
+  dominantSurfaceId: 0,        // surface under the most-loaded contact patch
+
+  // ── race state, owned by RaceSystem ──
+  lap: 0, checkpoint: 0, place: 1, progress: 0,  // progress = laps + fraction of lap, monotonic
+  lapTime: 0, bestLap: Infinity, totalTime: 0,
+  finished: false, wrongWay: false,
+
+  // ── gameplay, owned by PickupSystem ──
+  weapon: null,                // { id, ammo, chargeT } or null
+  effects: { boost:0, frozen:0, shielded:0, squashed:0, electro:0, oiled:0 },
+
+  // ── methods ──
+  applyControl(inputState),    // AI or player writes desired controls here
+  respawn(atCheckpointIndex),
+  addImpulse(worldImpulse, worldPoint),
+  getForward(out), getRight(out), getUp(out),
+  worldPosition(out),          // interpolated visual position
+  simPosition(out),            // exact physics position
+}
+```
+
+`Wheel`:
+```js
+{
+  index, isFront, isLeft, isDriven, isSteered,
+  restPosition: Vector3,       // chassis-local suspension anchor
+  radius, width,
+  compression: 0..1, prevCompression, suspensionForce,
+  contact: false, contactPoint: Vector3, contactNormal: Vector3, surfaceId: 0,
+  angularVelocity, rotation, steerAngle,
+  slipRatio, slipAngle, load, lateralForce, longitudinalForce,
+  isSpinning, isLocked, skidIntensity: 0..1,
+  mesh: THREE.Object3D
+}
+```
+
+### `Weapon` (gameplay/weapons/*.js)
+
+```js
+{
+  id: 'firework', name: 'Firework', icon: 'firework',
+  slots: 1, uses: 1, aimMode: 'forward'|'back'|'self'|'target'|'drop',
+  weight: (place, carCount) => 0..1,   // pickup roll weighting by race position
+  fire(ctx),                            // ctx = { car, game, target, direction }
+  update?(dt, state, game),
+}
+```
+
 ### EventBus events (canonical names)
 
 Emit with `game.bus.emit(name, payload)`, listen with `game.bus.on(name, fn)`.
