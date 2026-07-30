@@ -313,8 +313,7 @@ vehicle sim, FX, renderer and UI are all expected to read them.
 |---|---|---|
 | `effectMods: {grip,torque,steer,brake,maxSpeed,downforce,antiRoll}` | Effects | Handling multipliers, `1` = normal. **The single channel the vehicle sim must read** — do not also read `car.effects` directly, or effects apply twice. |
 | `effectVisual: {boost,frost,shield,squash,spark,soak,blind}` | Effects | Eased 0..1 weights for renderer/FX. Never snaps. |
-| `shieldCharges: int` | Effects | Hits the bubble still absorbs. `effects.shielded > 0` alone does **not** block. |
-| `invulnerable: number` | Respawn | `> 0` blocks weapon damage **without** burning a shield charge. |
+| `invulnerable: number` | Respawn | `> 0` blocks weapon damage **without** popping the shield bubble. |
 | `hasBomb`, `bombFuse` | Bomb | Holder flag + fuse; `bombFuse` mirrors `effects.bomb`. |
 | `hazardSurfaceId: number` | PickupSystem | `15` while inside an oil slick. Slicks are published **out of band**, not through the collision mesh, because `addStaticGeometry` is append-only and a slick expires. Grip lookup must be `car.hazardSurfaceId \|\| wheel.surfaceId`. |
 | `weapon.{name,icon,ready,rolling,uses,aimMode,dual}` | PickupSystem | Extends the `{id,ammo,chargeT}` contract. **While `ready === false` the `id` is a flickering display value — never act on it.** |

@@ -36,7 +36,6 @@ export const Shield = {
 
   // ── tuning ────────────────────────────────────────────────────────────
   duration: 15.0,
-  charges: 1,
   radius: 0.21,
 
   fire(ctx) {
@@ -45,7 +44,7 @@ export const Shield = {
     const fx = effectsOf(game);
     if (!fx || !car) return false;
 
-    fx.shield(car, Shield.duration, Shield.charges, {
+    fx.shield(car, Shield.duration, {
       sourceId: car.id, weaponId: 'shield',
     });
 

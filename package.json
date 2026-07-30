@@ -8,7 +8,8 @@
     "dev": "vite --host --port 5173",
     "build": "vite build",
     "preview": "vite preview --port 4173",
-    "check": "node tools/check.mjs"
+    "check": "node tools/check.mjs",
+    "smoke": "node tools/smoke.mjs"
   },
   "keywords": ["threejs", "racing", "re-volt", "webgl"],
   "license": "MIT",

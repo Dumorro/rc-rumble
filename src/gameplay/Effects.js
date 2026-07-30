@@ -13,7 +13,7 @@
  * ── car.effects (seconds remaining, 0 = inactive) ──────────────────────────
  *   boost     nitro / turbo thrust
  *   frozen    encased in ice: almost no grip, sluggish steering
- *   shielded  bubble up; absorbs one hit (see `car.shieldCharges`)
+ *   shielded  bubble up; absorbs exactly one hit, then ends
  *   squashed  flattened: weak motor, low top speed, squashed mesh
  *   electro   motor stalled by an electro-pulse
  *   oiled     spinning out on an oil slick
@@ -163,7 +163,6 @@ export class EffectsLayer {
       boost: 0, frozen: 0, shielded: 0, squashed: 0, electro: 0, oiled: 0,
       blinded: 0, soaked: 0,
     };
-    if (car.shieldCharges == null) car.shieldCharges = 0;
     if (!car._fxBase && car.body) {
       car._fxBase = {
         friction: car.body.friction,
@@ -187,7 +186,6 @@ export class EffectsLayer {
       e[k] = 0;
       store[k] = 0;
     }
-    car.shieldCharges = 0;
     const v = car.effectVisual;
     v.boost = v.frost = v.shield = v.squash = v.spark = v.soak = v.blind = 0;
     Object.assign(car.effectMods, NEUTRAL_MODS);
@@ -243,7 +241,6 @@ export class EffectsLayer {
       car.effects[key] = 0;
       if (car._fxTimers) car._fxTimers[key] = 0;
       this._emitEnd(car, key);
-      if (key === 'shielded') car.shieldCharges = 0;
     }
   }
 
@@ -302,11 +299,13 @@ export class EffectsLayer {
     return ok;
   }
 
-  /** Raise a shield bubble that absorbs `charges` hits. */
-  shield(car, seconds = 14, charges = 1, opts = null) {
-    const ok = this.apply(car, 'shielded', seconds, opts);
-    if (ok) car.shieldCharges = Math.max(car.shieldCharges ?? 0, charges);
-    return ok;
+  /**
+   * Raise a shield bubble. It absorbs exactly one hit and then ends — the
+   * bubble's own presence IS the charge, so there is no separate counter.
+   * A multi-hit shield would need a HUD readout to be fair; add both together.
+   */
+  shield(car, seconds = 14, opts = null) {
+    return this.apply(car, 'shielded', seconds, opts);
   }
 
   /**
@@ -348,13 +347,10 @@ export class EffectsLayer {
       });
       return false;
     }
-    if (!pierce && car.effects.shielded > 0 && (car.shieldCharges ?? 0) > 0) {
-      car.shieldCharges--;
-      if (car.shieldCharges <= 0) {
-        car.effects.shielded = 0;
-        if (car._fxTimers) car._fxTimers.shielded = 0;
-        this._emitEnd(car, 'shielded');
-      }
+    if (!pierce && car.effects.shielded > 0) {
+      car.effects.shielded = 0;
+      if (car._fxTimers) car._fxTimers.shielded = 0;
+      this._emitEnd(car, 'shielded');
       car.effectVisual.shield = 1;   // flare the bubble as it pops
       this._bus?.emit('weapon:blocked', {
         carId: car.id, sourceId, weaponId,
@@ -404,7 +400,6 @@ export class EffectsLayer {
       if (t <= 0) {
         e[k] = 0;
         store[k] = 0;
-        if (k === 'shielded') car.shieldCharges = 0;
         this._emitEnd(car, k);
         continue;
       }

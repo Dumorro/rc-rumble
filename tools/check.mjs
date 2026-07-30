@@ -248,7 +248,7 @@ const CONTRACT_NOISE = new Set([
   'true', 'false', 'null', 'undefined', 'Infinity', 'NaN',
   'THREE', 'Vector3', 'Quaternion', 'Matrix3', 'Box3', 'Group', 'Object3D',
   'RigidBody', 'CollisionMesh', 'CenterlineSpline', 'SurfaceTable', 'CarDef',
-  'Wheel', 'InteractiveProp', 'bool', 'number', 'string',
+  'Wheel', 'InteractiveProp', 'bool', 'number', 'string', 'int',
 ]);
 
 /**
@@ -272,19 +272,37 @@ const CONTRACT_ALLOW = {
     + 'drives the CPU cars. The contract documents it so other systems COULD drive a car, not '
     + 'because one currently does.',
   uses:
-    'Weapon bookkeeping. The consumed field is `ammo` (the documented {id,ammo,chargeT} core); '
-    + '`uses` records what the slot was granted with and nothing outside gameplay needs it.',
+    'Dead bookkeeping, verified harmless. Written at PickupSystem.js:280/316/411 and read '
+    + 'nowhere; `ammo` is the live field and is what the HUD renders (PickupSlot.js:64,155). '
+    + 'Nothing is missing — `uses` is a redundant copy, not an unwired feature.',
   hasBomb:
-    'Redundant with the bomb:attach / bomb:transfer / bomb:explode events, which is how the '
-    + 'HUD actually tracks the holder (src/ui/hud/HUD.js:295-302). The feature works; the field '
-    + 'has no consumer because the events carry the same fact.',
+    'Genuinely read, single-directory: it is the hand-off guard that stops the bomb being '
+    + 'passed to a car that already holds one (Bomb.js:90,93,99,188). A false positive of the '
+    + '2-directory heuristic, not a gap in the code.',
+};
+
+/**
+ * REAL DEFECTS the rule caught that this agent cannot fix from its own scope.
+ *
+ * These are NOT exemptions. Each one is a producer with no consumer — the exact
+ * class of bug this rule exists to find. They are held here instead of in
+ * CONTRACT_ALLOW so that `npm run check` prints them loudly on every run rather
+ * than passing in silence, while still leaving the gate green so unrelated work
+ * is not blocked by a defect its author did not introduce.
+ *
+ * Delete an entry the moment it is wired up. Do not add one to quiet a failure.
+ */
+const CONTRACT_KNOWN_INERT = {
   bombFuse:
-    'Same as hasBomb — the fuse is carried by the bomb:* event payloads that the HUD consumes.',
-  shieldCharges:
-    'WEAKEST ENTRY, RE-EXAMINE BEFORE TRUSTING IT. Nothing displays the remaining hit count; '
-    + 'the HUD draws a shield icon only. Exempted because a missing readout is a UI design '
-    + 'choice rather than a broken wire, but if the shield is meant to show hits remaining then '
-    + 'this is a real gap and this entry should be deleted rather than kept.',
+    'BOMB FUSE COUNTDOWN IS INERT. `car.bombFuse` is written every frame '
+    + '(Bomb.js:166,274) and read by nothing; so is `car.effects.bomb` (Bomb.js:167,275), '
+    + 'whose key is not even in Effects.EFFECT_KEYS. `bomb:tick` is emitted at an '
+    + 'accelerating 1.4→10.9 Hz cadence carrying {carId, fuse, urgency} (Bomb.js:210) and has '
+    + 'no subscriber. AudioSystem.startBombTick/updateBombTick/stopBombTick (AudioSystem.js:'
+    + '840-851) are fully implemented over a `bomb/tick` sample and are called only by the '
+    + 'audio selftest. Net effect: the hot-potato bomb has no HUD countdown and makes no '
+    + 'ticking sound — the player gets a "BOMB ON BOARD!" toast, an in-world spark/glow on '
+    + 'the bomb mesh, then "BOOM". Fix is in src/ui + src/audio, which this agent does not own.',
 };
 
 /**
@@ -372,16 +390,17 @@ function runContractCheck(files) {
 
   const bad = [];
   for (const [field, contract] of fields) {
-    if (CONTRACT_ALLOW[field]) continue;
+    if (CONTRACT_ALLOW[field] || CONTRACT_KNOWN_INERT[field]) continue;
     const dirs = seen.get(field);
     if (dirs.size === 0) bad.push({ field, contract, dirs, why: 'never referenced in src/' });
     else if (dirs.size === 1) bad.push({ field, contract, dirs, why: `only in src/${[...dirs][0]}/` });
   }
 
-  // An allowlist entry with no justification is itself a violation.
-  const unjustified = Object.entries(CONTRACT_ALLOW)
-    .filter(([, why]) => typeof why !== 'string' || why.trim().length < 10)
-    .map(([f]) => f);
+  // An entry with no justification is itself a violation — in either list.
+  const unjustified = [
+    ...Object.entries(CONTRACT_ALLOW),
+    ...Object.entries(CONTRACT_KNOWN_INERT),
+  ].filter(([, why]) => typeof why !== 'string' || why.trim().length < 10).map(([f]) => f);
 
   console.log(C.dim(`  ${fields.size} contract fields parsed from ARCHITECTURE.md`));
   if (bad.length === 0) console.log(`  ${C.green('✓')} every contract field is referenced from 2+ systems`);
@@ -394,6 +413,16 @@ function runContractCheck(files) {
   }
   if (unjustified.length) {
     console.log(`  ${C.red('✗')} allowlist entries without a justification: ${unjustified.join(', ')}`);
+  }
+
+  // Known-inert features are printed in full, every run. They do not fail the
+  // gate, but they are never allowed to go quiet either.
+  const inert = Object.entries(CONTRACT_KNOWN_INERT);
+  if (inert.length) {
+    console.log(`  ${C.yellow('!')} ${C.bold(`KNOWN INERT FEATURES (${inert.length}) — built, documented, unwired`)}`);
+    for (const [field, why] of inert) {
+      console.log(C.yellow(`      ${field}: ${why}`));
+    }
   }
   return bad.length + unjustified.length;
 }

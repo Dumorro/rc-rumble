@@ -448,14 +448,20 @@ export class RenderSystem {
    * @param {'low'|'medium'|'high'|'ultra'} level
    */
   setQuality(level) {
-    if (!level || level === this.quality) return this;
+    if (!level) return this;
+    // NOTE: deliberately no `level === this.quality` early-out. Re-selecting the
+    // level you are already on is exactly how a player recovers after the adaptive
+    // governor has degraded them to `minimal`, and the documented contract for this
+    // method is "rebuilds shadows + post + pixel ratio, resets adaptive". Bailing
+    // out early made that a silent no-op. Only Settings.applyOne() calls this, on an
+    // explicit user change, so a redundant rebuild is cheap and rare.
     this.quality = level;
     CONFIG.quality = level;
 
-    this.adaptive.step = 0;
     this.adaptive.overBudget = 0;
     this.adaptive.underBudget = 0;
     this.adaptive.upgrades = 0;
+    this.adaptive.cooldown = 0;
     this.adaptive.basePixelRatio = clamp(
       Math.min(globalThis.devicePixelRatio || 1, q(CONFIG.render.maxPixelRatio, level)), 0.5, 4);
     this.adaptive.pixelRatio = this.adaptive.basePixelRatio;
@@ -472,6 +478,12 @@ export class RenderSystem {
     this.postfx?.applyQuality(level);
     for (const k in this.postfx?._force ?? {}) this.postfx.force(k, null);
     if (this.environment) this.environment.autoUpdate = true;
+
+    // Rewind the adaptive ladder THROUGH the setter, not by assigning `.step`.
+    // `_setAdaptiveStep` is what republishes the `getStats().adaptive` label, the
+    // postfx force-overrides and the shadow toggle — assigning the field directly
+    // left getStats() reporting a stale "minimal" long after post was back on.
+    this._setAdaptiveStep(0);
 
     this.resize();
     this.environment?.refresh();
