@@ -32,6 +32,7 @@ import * as THREE from 'three';
 import { TrackBuilder } from './TrackBuilder.js';
 import { SurfaceId, SURFACES, getSurface } from './Surfaces.js';
 import { SplineSample } from './Spline.js';
+import { createRayHit } from '../physics/CollisionMesh.js';
 import garden from './tracks/garden.js';
 import toyMuseum from './tracks/toy_museum.js';
 import { auditBuiltTrack, auditTrackModule, DRIVABILITY } from '../../tools/drivability.mjs';
@@ -292,18 +293,38 @@ section('Regressions — the Back Garden');
     min.set(DOORWAY.x0, DOORWAY.y0, z - 0.25);
     max.set(DOORWAY.x1, DOORWAY.y1, z + 0.25);
     const n = track.collision.queryAABB(min, max, scratch);
-    let inside = 0;
-    for (let k = 0; k < n; k++) {
-      track.collision.getTriangle(scratch[k], A, B, Cv);
-      const all = [A, B, Cv].every((v) => (
-        v.x >= DOORWAY.x0 - 1e-3 && v.x <= DOORWAY.x1 + 1e-3
-        && v.y >= DOORWAY.y0 - 1e-3 && v.y <= DOORWAY.y1 + 1e-3
-        && Math.abs(v.z - z) <= 0.25 + 1e-3
-      ));
-      if (all) inside++;
+    // Counting triangles WHOLLY inside the doorway box is vacuous: a 16 m wall
+    // slab is two big triangles whose vertices are metres outside the box, so
+    // the count is 0 and the assertion passes on the sealed wall it exists to
+    // catch. Verified — that version reported inside=0 on the pre-fix garden.
+    //
+    // Test the property that actually matters instead: can a car-height ray
+    // cross the wall plane anywhere in the opening? That is what "has an
+    // opening" means, and a slab of any size blocks it.
+    // Only a near-VERTICAL face counts. A horizontal ray at car height also hits
+    // the rising lawn behind the z=+16 wall (measured: surface 5/7 ground at
+    // z≈15.4), and treating that as a blockage would fail a doorway that is
+    // wide open — the mirror of the vacuous version's false negative.
+    // `RayHit.normal` is flipped toward the ray origin, so use the stored plane.
+    const hit = createRayHit();
+    const nrm = new THREE.Vector3();
+    const dir = new THREE.Vector3(0, 0, z < 0 ? -1 : 1);
+    const wallHitsAt = (x) => {
+      for (const y of [0.05, 0.104, 0.2]) {
+        const from = new THREE.Vector3(x, y, z - dir.z * 1.4);
+        if (!(track.collision.raycast(from, dir, 2.8, hit) && hit.hit)) continue;
+        track.collision.triNormal(hit.triIndex, nrm);
+        if (Math.abs(nrm.y) < 0.64) return true;   // steeper than ~50° = a wall
+      }
+      return false;
+    };
+    let blocked = 0;
+    for (let i = 0; i <= 12; i++) {
+      if (wallHitsAt(DOORWAY.x0 + (DOORWAY.x1 - DOORWAY.x0) * (i / 12))) blocked++;
     }
     ok(`the house wall at z = ${z} has an opening on the racing line`,
-      inside === 0, `${inside} collision triangle(s) still block the doorway`);
+      !wallHitsAt((DOORWAY.x0 + DOORWAY.x1) / 2),
+      `the doorway centre is walled (${blocked}/13 lanes blocked by a vertical face)`);
   }
 
   // The start grid must be behind the finish line and out of the deck jump.
