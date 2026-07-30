@@ -14,6 +14,10 @@ and the directory ownership map. `tools/check.mjs` **parses it** and fails the b
 drift, so editing it changes what the gates enforce.
 
 `STATUS.md` is the current verified state. `PROMPT.md` is the original brief.
+[`README.md`](README.md) is the overview. To add a circuit, use the **`build-track`
+skill** (`.claude/skills/build-track/`) — or read
+[`docs/TUTORIAL-building-a-track.md`](docs/TUTORIAL-building-a-track.md) for the
+long-form walkthrough with the mistakes left in.
 
 ## Commands
 

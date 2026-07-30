@@ -3,6 +3,15 @@
 > **Every agent working on this repo MUST read this file first and MUST NOT violate it.**
 > It is the interface contract that lets many people work on separate systems in parallel
 > without breaking each other.
+>
+> **This file is machine-read.** `tools/check.mjs` parses the data-contract sections and
+> fails the build when a documented field is not wired up across at least two systems, so
+> editing it changes what the gates enforce. Keep the table and fence formats intact.
+
+**See also:** [`README.md`](README.md) (overview + commands) ·
+[`STATUS.md`](STATUS.md) (verified state) ·
+[`CLAUDE.md`](CLAUDE.md) (agent orientation and known traps) ·
+[`docs/TUTORIAL-building-a-track.md`](docs/TUTORIAL-building-a-track.md) (add a circuit)
 
 ## Product
 

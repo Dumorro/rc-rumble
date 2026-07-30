@@ -7,6 +7,11 @@ live telemetry, not inferred from source.
 Last verified: production build (`npm run build`) served with `vite preview`, driven
 with Playwright on Chromium 150 / **Apple M1 (ANGLE Metal)**, viewport 1600×900, DPR 1.
 
+**See also:** [`README.md`](README.md) (overview + commands) ·
+[`ARCHITECTURE.md`](ARCHITECTURE.md) (the contract) ·
+[`CLAUDE.md`](CLAUDE.md) (agent orientation and known traps) ·
+[roadmap](https://github.com/Dumorro/rc-rumble/issues/12) (open work, by blocker)
+
 ---
 
 ## Run it
