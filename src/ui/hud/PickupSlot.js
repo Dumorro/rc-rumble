@@ -13,7 +13,7 @@
  * animation and the simulation can never disagree.
  */
 
-import { THEME, withAlpha, fitCanvas, drawDisplay } from '../Theme.js';
+import { THEME, withAlpha, fitCanvas, drawDisplay, measureDisplay } from '../Theme.js';
 import { blitWeaponIcon, colorFor, labelFor, iconIdFor, REEL_ORDER } from './WeaponIcons.js';
 
 const C = THEME.color;
@@ -22,7 +22,10 @@ export class PickupSlot {
   constructor() {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'hud-pickup';
+    /** Plate size. */
     this.size = 0;
+    /** Canvas box — wider than the plate so long names have somewhere to go. */
+    this.width = 0;
     this.height = 0;
 
     this._reelPos = 0;        // continuous index into REEL_ORDER
@@ -37,8 +40,10 @@ export class PickupSlot {
 
   resize(size) {
     this.size = Math.max(56, Math.round(size));
-    this.height = Math.round(this.size * 1.34);
-    this.canvas.style.width = `${this.size}px`;
+    // Room for the plate, the ammo pips, the weapon name and the fire prompt.
+    this.width = Math.round(this.size * 2.15);
+    this.height = Math.round(this.size * 1.52);
+    this.canvas.style.width = `${this.width}px`;
     this.canvas.style.height = `${this.height}px`;
     return this;
   }
@@ -50,9 +55,9 @@ export class PickupSlot {
   draw(slot, rawDt) {
     const s = this.size;
     if (!s) return;
-    const ctx = fitCanvas(this.canvas, s, this.height);
+    const ctx = fitCanvas(this.canvas, this.width, this.height);
     if (!ctx) return;
-    ctx.clearRect(0, 0, s, this.height);
+    ctx.clearRect(0, 0, this.width, this.height);
 
     const dt = Math.min(rawDt ?? 0.016, 0.05);
     const rolling = !!slot?.rolling;
@@ -67,8 +72,8 @@ export class PickupSlot {
     this._armPulse = (this._armPulse + dt * 2.3) % (Math.PI * 2);
     this._emptyT = (this._emptyT + dt * 1.5) % (Math.PI * 2);
 
-    const cx = s * 0.5;
-    const cy = s * 0.5;
+    const cx = this.width * 0.5;
+    const cy = s * 0.52;
     const r = s * 0.44;
     const accent = armed || rolling ? colorFor(rolling ? REEL_ORDER[Math.floor(this._reelPos) % REEL_ORDER.length] : id) : C.inkFaint;
 
@@ -161,30 +166,43 @@ export class PickupSlot {
     }
 
     // ── label + prompt ──
-    const labelY = s + (this.height - s) * 0.42;
+    const nameY = s + s * 0.24;
+    const promptY = nameY + s * 0.235;
+    const maxW = this.width * 0.96;
     if (rolling) {
-      drawDisplay(ctx, '...', cx, labelY, {
-        size: s * 0.14, tracking: 0.16, weight: 0.18, align: 'center', fill: withAlpha(C.cyan, 0.8),
+      drawDisplay(ctx, 'ROLLING', cx, nameY, {
+        size: fitSize('ROLLING', 0.18, s * 0.135, maxW), tracking: 0.18,
+        weight: 0.18, align: 'center', fill: withAlpha(C.cyan, 0.85),
       });
     } else if (armed) {
       const name = (slot?.name || labelFor(id) || '').toUpperCase();
-      drawDisplay(ctx, name, cx, labelY, {
-        size: Math.min(s * 0.125, (s * 1.55) / Math.max(6, name.length) * 0.9),
-        tracking: 0.10, weight: 0.17, align: 'center', fill: '#ffffff',
-        glow: withAlpha(accent, 0.55), glowBlur: s * 0.12,
+      drawDisplay(ctx, name, cx, nameY, {
+        // Measured, not guessed: "WATER BALLOON" has to fit the same box "OIL" does.
+        size: fitSize(name, 0.09, s * 0.155, maxW),
+        tracking: 0.09, weight: 0.17, align: 'center', fill: '#ffffff',
+        glow: withAlpha(accent, 0.6), glowBlur: s * 0.14,
       });
       const promptA = 0.55 + 0.45 * Math.sin(this._armPulse * 1.7);
-      drawDisplay(ctx, `${this.fireKeyLabel} TO FIRE`, cx, labelY + s * 0.155, {
-        size: s * 0.085, tracking: 0.18, weight: 0.19, align: 'center',
+      const prompt = `${this.fireKeyLabel} TO FIRE`;
+      drawDisplay(ctx, prompt, cx, promptY, {
+        size: fitSize(prompt, 0.16, s * 0.105, maxW), tracking: 0.16,
+        weight: 0.19, align: 'center',
         fill: withAlpha(C.amber, 0.45 + promptA * 0.5),
       });
     } else {
-      drawDisplay(ctx, 'NO PICKUP', cx, labelY, {
-        size: s * 0.095, tracking: 0.20, weight: 0.19, align: 'center',
-        fill: withAlpha(C.inkFaint, 0.55),
+      drawDisplay(ctx, 'NO PICKUP', cx, nameY, {
+        size: fitSize('NO PICKUP', 0.20, s * 0.11, maxW), tracking: 0.20,
+        weight: 0.19, align: 'center', fill: withAlpha(C.inkFaint, 0.6),
       });
     }
   }
+}
+
+/** Largest cap height at which `text` still fits `maxWidth`, capped at `want`. */
+function fitSize(text, tracking, want, maxWidth) {
+  const em = measureDisplay(text, 1, tracking);
+  if (em <= 0) return want;
+  return Math.min(want, maxWidth / em);
 }
 
 /** A rectangle with its corners chamfered — matches the display typeface. */

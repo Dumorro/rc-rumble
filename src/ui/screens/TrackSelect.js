@@ -350,6 +350,14 @@ export function drawTrackThumb(canvas, w, h, track, game, ui) {
     ctx.beginPath();
     ctx.arc(fit.sx[0], fit.sx[1], Math.max(2.6, w * 0.012), 0, Math.PI * 2);
     ctx.fill();
+
+    // Be honest: a track we have never built only has a stylised layout.
+    if (!outline.real) {
+      drawDisplay(ctx, 'LAYOUT REVEALED AFTER YOUR FIRST RACE', w * 0.5, h - 7, {
+        size: Math.max(6.5, h * 0.052), tracking: 0.20, weight: 0.20,
+        align: 'center', fill: 'rgba(160,185,225,0.42)',
+      });
+    }
   }
 
   // Record badge

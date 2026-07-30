@@ -634,8 +634,11 @@ export class HUD {
     for (const t of this._toasts) {
       if (t.text === text) { t.life = secs; return; }
     }
-    const node = el(`.hud-toast.${kind}`, { text });
+    const node = el(`.hud-toast.${kind}.in-start`, { text });
     this.toastWrap.appendChild(node);
+    // One reflow, then drop the start class so the transition actually runs.
+    void node.offsetWidth;
+    node.classList.remove('in-start');
     this._toasts.push({ node, life: secs, text });
     while (this._toasts.length > 4) {
       const dead = this._toasts.shift();
@@ -682,10 +685,9 @@ export class HUD {
     void this.bannerWrap.offsetWidth;
     this.bannerWrap.classList.add('enter');
     clearTimeout(this._bannerTimer);
-    this._bannerTimer = setTimeout(() => {
-      this.bannerWrap.style.display = 'none';
-      this.bannerWrap.classList.remove('enter');
-    }, 3300);
+    clearTimeout(this._bannerHide);
+    this._bannerTimer = setTimeout(() => this.bannerWrap.classList.remove('enter'), 2900);
+    this._bannerHide = setTimeout(() => { this.bannerWrap.style.display = 'none'; }, 3300);
   }
 
   // ─────────────────────────────────────────────────────────── finish

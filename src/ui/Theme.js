@@ -688,7 +688,8 @@ ${cssVars()}
 }
 .rcr-hud.is-hidden { opacity: 0; }
 .rcr-hud .corner { position: absolute; display: flex; flex-direction: column; }
-.rcr-hud .tl { top: calc(var(--safe-t) + 14px);  left:  calc(var(--safe-l) + 18px); }
+.rcr-hud .tl { top: calc(var(--safe-t) + 14px);  left:  calc(var(--safe-l) + 18px + var(--tl-shift, 0px));
+  transition: left var(--d-base) var(--e-out); }
 .rcr-hud .tr { top: calc(var(--safe-t) + 14px);  right: calc(var(--safe-r) + 18px); align-items: flex-end; }
 .rcr-hud .bl { bottom: calc(var(--safe-b) + 14px); left:  calc(var(--safe-l) + 18px); }
 .rcr-hud .br { bottom: calc(var(--safe-b) + 14px); right: calc(var(--safe-r) + 18px); align-items: flex-end; }
@@ -712,9 +713,9 @@ ${cssVars()}
 @keyframes rcr-rank-down { 0% { transform: translateY(-16px) scale(.7); filter: brightness(.4) saturate(2); } 100% { transform: none; } }
 
 /* standings ladder */
-.hud-ladder { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; min-width: 186px; }
+.hud-ladder { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; width: 208px; max-width: 34vw; }
 .hud-row {
-  display: grid; grid-template-columns: 20px 1fr auto; gap: 8px; align-items: center;
+  display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: center;
   padding: 3px 8px; border-radius: var(--r-sm);
   background: rgba(9,15,26,.46); border: 1px solid rgba(126,186,255,.09);
   font-size: 11px; letter-spacing: .08em; color: var(--c-inkDim);
@@ -722,16 +723,17 @@ ${cssVars()}
 }
 .hud-row .n { color: var(--c-inkFaint); font-weight: 800; text-align: right; }
 .hud-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
-.hud-row .gp { font-family: var(--f-mono); font-size: 10px; color: var(--c-inkFaint); }
+.hud-row .gp { font-family: var(--f-mono); font-size: 10px; color: var(--c-inkFaint); white-space: nowrap; }
 .hud-row.me { background: rgba(255,209,102,.13); border-color: rgba(255,209,102,.42); color: var(--c-ink); }
 .hud-row.me .n { color: var(--c-player); }
 .hud-row.me .gp { color: var(--c-ink); }
 .hud-row .swatch { width: 6px; height: 6px; border-radius: 2px; display: inline-block; margin-right: 6px; vertical-align: middle; }
 
 /* lap times */
-.hud-times { display: grid; grid-template-columns: auto auto; gap: 2px 14px; align-items: baseline; margin-top: 6px; }
-.hud-times .k { font-size: 9px; letter-spacing: .26em; text-transform: uppercase; color: var(--c-inkFaint); }
-.hud-times .v { font-family: var(--f-mono); font-size: 13px; color: var(--c-ink); letter-spacing: .02em; }
+.hud-times { display: grid; grid-template-columns: auto auto; gap: 3px 16px; align-items: baseline; margin-top: 6px; }
+.hud-times .k { font-size: 9.5px; letter-spacing: .26em; text-transform: uppercase; color: var(--c-inkDim); }
+.hud-times .v { font-family: var(--f-mono); font-size: 14px; font-weight: 600; color: var(--c-ink);
+  letter-spacing: .01em; text-align: right; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
 .hud-times .v.best { color: var(--c-magenta); }
 
 .hud-delta {
@@ -749,13 +751,19 @@ ${cssVars()}
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   pointer-events: none;
 }
-.hud-count canvas { filter: drop-shadow(0 0 40px rgba(84,220,255,.45)); }
-.hud-count.punch canvas { animation: rcr-punch .62s var(--e-out); }
-@keyframes rcr-punch {
-  0%   { transform: scale(2.1); filter: blur(14px) drop-shadow(0 0 60px rgba(84,220,255,.9)); opacity: 0; }
-  22%  { transform: scale(1.0); filter: blur(0px)  drop-shadow(0 0 44px rgba(84,220,255,.8)); opacity: 1; }
-  74%  { transform: scale(1.0); opacity: 1; }
-  100% { transform: scale(1.30); filter: blur(6px); opacity: 0; }
+/* Transition-driven rather than a self-terminating keyframe: a keyframe that
+   ends invisible would leave nothing on screen for prefers-reduced-motion
+   users, who would then never see the countdown at all. */
+.hud-count { opacity: 0; transition: opacity .16s linear; }
+.hud-count canvas {
+  transform: scale(2.0); opacity: 0;
+  filter: blur(12px) drop-shadow(0 0 50px rgba(84,220,255,.8));
+  transition: transform .30s var(--e-out), filter .30s var(--e-out), opacity .16s linear;
+}
+.hud-count.punch { opacity: 1; }
+.hud-count.punch canvas {
+  transform: scale(1); opacity: 1;
+  filter: blur(0) drop-shadow(0 0 40px rgba(84,220,255,.55));
 }
 
 /* banners */
@@ -768,13 +776,11 @@ ${cssVars()}
   background: linear-gradient(90deg, rgba(255,122,24,0), rgba(255,122,24,.30), rgba(255,122,24,0));
   border-top: 1px solid rgba(255,178,35,.5); border-bottom: 1px solid rgba(255,178,35,.5);
 }
-.hud-banner.enter { animation: rcr-banner 3.2s var(--e-out) forwards; }
-@keyframes rcr-banner {
-  0%   { opacity: 0; transform: translate(-50%, -18px) scale(.94); }
-  9%   { opacity: 1; transform: translate(-50%, 0) scale(1); }
-  78%  { opacity: 1; }
-  100% { opacity: 0; transform: translate(-50%, -10px); }
+.hud-banner {
+  opacity: 0; transform: translate(-50%, -16px) scale(.95);
+  transition: opacity .26s var(--e-out), transform .38s var(--e-snap);
 }
+.hud-banner.enter { opacity: 1; transform: translate(-50%, 0) scale(1); }
 
 /* toasts */
 .hud-toasts {
@@ -786,16 +792,16 @@ ${cssVars()}
   font-size: 12px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase;
   background: rgba(9,15,26,.72); border: 1px solid rgba(126,186,255,.24); color: var(--c-ink);
   box-shadow: 0 8px 26px rgba(0,0,0,.5);
-  animation: rcr-toast-in .34s var(--e-snap);
   white-space: nowrap;
+  opacity: 1; transform: none;
+  transition: opacity .26s var(--e-out), transform .30s var(--e-snap);
 }
-.hud-toast.out { animation: rcr-toast-out .32s var(--e-in) forwards; }
+.hud-toast.in-start { opacity: 0; transform: translateY(14px) scale(.9); }
+.hud-toast.out { opacity: 0; transform: translateY(-10px) scale(.96); }
 .hud-toast.good { border-color: rgba(67,229,140,.5);  color: var(--c-good); box-shadow: 0 0 26px rgba(67,229,140,.24); }
 .hud-toast.bad  { border-color: rgba(255,79,98,.5);   color: var(--c-bad);  box-shadow: 0 0 26px rgba(255,79,98,.24); }
 .hud-toast.warn { border-color: rgba(255,204,51,.5);  color: var(--c-warn); box-shadow: 0 0 26px rgba(255,204,51,.24); }
 .hud-toast.info { border-color: rgba(84,220,255,.5);  color: var(--c-cyan); box-shadow: 0 0 26px rgba(84,220,255,.24); }
-@keyframes rcr-toast-in  { from { opacity: 0; transform: translateY(14px) scale(.9); } to { opacity: 1; transform: none; } }
-@keyframes rcr-toast-out { to { opacity: 0; transform: translateY(-10px) scale(.96); } }
 
 /* wrong way — deliberately loud */
 .hud-wrongway {
@@ -1033,6 +1039,10 @@ ${cssVars()}
 @media (prefers-reduced-motion: reduce) {
   .rcr *, .rcr *::before, .rcr *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
   .rcr-streaks { animation: none; }
+  /* These two communicate state by flashing; without motion they must simply
+     stay on rather than freeze on whichever keyframe they landed in. */
+  .hud-wrongway.show { animation: none !important; opacity: 1 !important; }
+  .res-record { animation: none !important; }
 }
 `;
 

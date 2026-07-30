@@ -57,15 +57,15 @@ export class MainMenu extends Screen {
         onSelect: () => this.ui.beginFlow('single'),
       },
       {
-        label: 'Time Trial', hint: 'Alone against the clock',
+        label: 'Time Trial', hint: 'Against the clock',
         onSelect: () => this.ui.beginFlow('timetrial'),
       },
       {
-        label: 'Championship', hint: 'Every track, points scored',
+        label: 'Championship', hint: 'Full season',
         onSelect: () => this.ui.beginFlow('championship'),
       },
-      { label: 'Options', hint: 'Video · audio · camera', onSelect: () => this.ui.push('options') },
-      { label: 'Controls', hint: 'Keyboard · gamepad', onSelect: () => this.ui.push('controls') },
+      { label: 'Options', hint: 'Video · audio', onSelect: () => this.ui.push('options') },
+      { label: 'Controls', hint: 'Key bindings', onSelect: () => this.ui.push('controls') },
     ]);
 
     this.panel = el('.rcr-panel.rcr-ticks', {
@@ -102,7 +102,7 @@ export class MainMenu extends Screen {
       ['↑↓', 'Navigate'], ['↵', 'Select'], ['ESC', 'Back'],
     ])));
     root.appendChild(el('.rcr-version', {
-      style: { right: 'auto', left: 'clamp(24px, 6vw, 96px)' },
+      style: { bottom: '6px', right: '14px' },
       text: 'build 0.1 · procedural everything',
     }));
 

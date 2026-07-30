@@ -1,0 +1,49 @@
+- generic [active] [ref=f8e1]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic: "1"
+              - generic: VANSTER
+              - generic: LEAD
+            - generic:
+              - generic: "2"
+              - generic: PEBBLE
+              - generic: —
+            - generic:
+              - generic: "3"
+              - generic: STOMPER
+              - generic: —
+            - generic:
+              - generic: "4"
+              - generic: CRUISER
+              - generic: —
+            - generic:
+              - generic: "5"
+              - generic: NEEDLE
+              - generic: —
+            - generic:
+              - generic: "6"
+              - generic: WEDGE
+              - generic: —
+            - generic:
+              - generic: "7"
+              - generic: PHANTOM
+              - generic: —
+            - generic:
+              - generic: "8"
+              - generic: TOYECA
+              - generic: —
+        - generic:
+          - generic:
+            - generic:
+              - generic: Lap
+              - generic: "00.000"
+              - generic: Last
+              - generic: "--.---"
+              - generic: Best
+              - generic: "--.---"
+              - generic: Race
+              - generic: 0:00.000

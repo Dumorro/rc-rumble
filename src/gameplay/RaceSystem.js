@@ -160,6 +160,31 @@ export class RaceEntry {
 const MAX_SKIPS = 1;
 
 /**
+ * The lap-continuous value congruent with `u` that sits nearest `reference`.
+ *
+ * `u` is a lap FRACTION and therefore ambiguous by any whole number of laps:
+ * u = 0.02 could mean "just over the line on lap 1" or "…on lap 4". Every place
+ * that re-derives `uAccum` from a raw `u` has to resolve that ambiguity, and
+ * they must all resolve it the same way or progress jumps by a whole lap.
+ *
+ * Resolving it as `lap + u` is wrong, and was the bug: `lap` only advances when
+ * a lap is VALIDATED (all gates passed), while the start grid sits BEHIND the
+ * finish line. A car that respawns in that opening stretch — before it has
+ * banked lap 1 but after crossing the line — got `uAccum = 0 + 0.97` instead of
+ * `-0.03`, a spurious whole lap. `_score` then clamped it to `lap + 1 - 1e-4`,
+ * so it read 0.9999 (displayed "1.000") while actually 3% into the race, and
+ * the next re-anchor collapsed it to the true value — the backwards jump.
+ * Measured on toy_museum: phantom held progress 0.9999 with uAccum 1.0588 and
+ * lap 0, then dropped to 0.08 the instant it respawned.
+ *
+ * Picking the nearest congruent value instead keeps the anchor continuous with
+ * whatever progress already was, and degrades to a no-op when the two agree.
+ */
+function nearestCongruentU(u, reference) {
+  return Math.round(reference - u) + u;
+}
+
+/**
  * Longest per-step motion that is still treated as *driving* rather than a
  * teleport, metres. 0.5 m at 120 Hz is 60 m/s — cars top out around 9 m/s and
  * even a bomb blast peaks near 10, so this only ever catches respawns and
@@ -305,7 +330,8 @@ export class RaceSystem {
         e._lastU = e.u;
         // The grid sits within half a lap of the line. Anchor cars behind it to
         // a small negative value so the first crossing reads as progress ≈ 0.
-        e.uAccum = e.u > 0.5 ? e.u - 1 : e.u;
+        // Reference 0 = the finish line, which is where the race starts from.
+        e.uAccum = nearestCongruentU(e.u, 0);
         e.progress = e.uAccum;
         e.hasProgress = true;
       } else {
@@ -586,7 +612,7 @@ export class RaceSystem {
           // progress can never permanently desync from the world and can never
           // be credited a lap it did not drive.
           e._lastU = u;
-          e.uAccum = e.lap + u;
+          e.uAccum = nearestCongruentU(u, e.uAccum);
           e._rejects = 0;
         }
         e.u = u;
@@ -903,7 +929,10 @@ export class RaceSystem {
     e.rawU = hit.u;
     e.u = wrap01(hit.u - this.finishU);
     e._lastU = e.u;
-    e.uAccum = e.lap + e.u;
+    // Nearest congruent value, NOT `lap + u` — see nearestCongruentU. A respawn
+    // may legitimately set a car back within its lap, but it must never move it
+    // a whole lap.
+    e.uAccum = nearestCongruentU(e.u, e.uAccum);
     e.progress = this._score(e);
     e._rejects = 0;
   }

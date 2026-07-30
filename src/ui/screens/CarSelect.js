@@ -313,9 +313,7 @@ export class CarSelect extends Screen {
     setStyle(this.carousel, 'opacity', this.focusZone === 0 ? '1' : '0.75');
     setStyle(this.colorPanel, 'borderColor',
       this.focusZone === 1 ? C.panelEdgeHot : C.panelEdge);
-    for (const item of this.actions.items) {
-      setClass(item.el, 'is-focus', this.focusZone === 2 && this.actions.items.indexOf(item) === this.actions.index);
-    }
+    this.actions.setActive(this.focusZone === 2);
     this._refreshSwatches();
   }
 

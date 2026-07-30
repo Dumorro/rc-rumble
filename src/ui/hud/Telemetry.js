@@ -128,6 +128,10 @@ export class Telemetry {
     this.enabled = !!v;
     setClass(this.root, 'hidden', !this.enabled);
     if (this.enabled) for (const k in this.traces) this.traces[k].clear();
+    // Slide the HUD's top-left block clear of the panel rather than letting a
+    // debug overlay bury the player's position and the standings ladder.
+    const hud = this.ui.hud?.root;
+    if (hud) hud.style.setProperty('--tl-shift', this.enabled ? `${(this.root?.offsetWidth || 306) + 14}px` : '0px');
     return this.enabled;
   }
 
