@@ -347,10 +347,16 @@ export class Car {
     // ── extra telemetry other systems find useful ────────────────────
     /** Signed lateral velocity in the chassis frame (m/s). */
     this.lateralSpeed = 0;
-    /** Max skid intensity across the four tyres, 0..1. */
+    /** Max skid intensity across the four tyres, 0..1. Any sliding, including
+     *  a locked wheel under braking or a spinning one — this is the tyre-MARK
+     *  signal, and a straight-line burnout should absolutely set it. */
     this.skid = 0;
-    /** Max skid intensity of the rear pair — the drift signal. */
+    /** Max skid intensity of the rear pair. Same caveat as `skid`. */
     this.rearSkid = 0;
+    /** Max SIDEWAYS-only skid across the four tyres, 0..1. */
+    this.lateralSkid = 0;
+    /** Max sideways-only skid of the rear pair — the real drift signal. */
+    this.rearLateralSkid = 0;
     /** Yaw rate (rad/s, + = turning left). */
     this.yawRate = 0;
     /** Chassis pitch / roll relative to the horizon (rad). */
@@ -509,6 +515,8 @@ export class Car {
     let onGround = 0;
     let maxSkid = 0;
     let rearSkid = 0;
+    let maxSkidLat = 0;
+    let rearSkidLat = 0;
     let maxSat = 0;
     let traction = 0;
     let bestLoad = -1;
@@ -589,6 +597,8 @@ export class Car {
 
       if (tire.skid > maxSkid) maxSkid = tire.skid;
       if (!w.isFront && tire.skid > rearSkid) rearSkid = tire.skid;
+      if (tire.skidLat > maxSkidLat) maxSkidLat = tire.skidLat;
+      if (!w.isFront && tire.skidLat > rearSkidLat) rearSkidLat = tire.skidLat;
       if (tire.saturation > maxSat) maxSat = tire.saturation;
 
       // Edge flags for the EventBus.
@@ -601,6 +611,8 @@ export class Car {
     this.wheelsOnGround = onGround;
     this.skid = maxSkid;
     this.rearSkid = rearSkid;
+    this.lateralSkid = maxSkidLat;
+    this.rearLateralSkid = rearSkidLat;
     this.gripUsage = clamp01(maxSat);
     this.tractionForce = traction;
     this.dominantSurfaceId = bestSurface;
@@ -614,14 +626,40 @@ export class Car {
     this._updateTelemetry(dt);
   }
 
-  /** Speed-sensitive steering limit, rate-limited rack, Ackermann spread. */
+  /**
+   * Speed-sensitive steering limit, rate-limited rack, Ackermann spread.
+   *
+   * ── why the slide bonus is large, and capped at the mechanical limit ──
+   *
+   * `steerMaxFast` (0.18–0.25 rad, 10–14°) exists to stop the car darting at
+   * speed. Applied to a car that is ALREADY sideways it does something quite
+   * different: it caps opposite lock below the angle needed to point the front
+   * wheels down the velocity vector, so the fronts keep scrubbing through the
+   * whole slide.
+   *
+   * Measured on cruiser at 45.6° of chassis slip with FULL opposite lock, under
+   * the old +22 % bonus: the front tyres were still at 32° and 22° of slip
+   * angle. A saturated front tyre at 30° does two bad things at once — it drags
+   * (its force opposes the slide, most of which is straight backwards, and the
+   * front axle carries about half the load) and it keeps feeding the yaw that
+   * put the car sideways in the first place. The car decelerated at ~29 m/s²
+   * and stopped, rotating, inside half a second. That is the whole reason a
+   * slide could not be caught: not the tyre model, not the balance, but that
+   * the driver was never given enough lock to un-scrub the front axle.
+   *
+   * So the taper is treated as what it is — a driver aid against twitchiness —
+   * and it backs off as the car goes sideways, up to `steerMax`, which is the
+   * rack's real mechanical stop and is never exceeded. At 40° of slip the car
+   * has essentially its full standstill lock available, which is exactly the
+   * enormous countersteer authority Re-Volt is built around.
+   */
   _updateSteering(dt, steer) {
     const d = this.def;
     const spd = Math.abs(this.speed);
     const t = clamp01(spd / Math.max(0.5, d.topSpeed));
-    // A little extra lock while sliding, so counter-steer can actually catch it.
-    const slideBonus = 1 + clamp01((Math.abs(this.slipAngle) - 0.12) / 0.5) * 0.22;
-    const limit = lerp(d.steerMax, d.steerMaxFast, t * t * 0.85 + t * 0.15) * slideBonus;
+    const slideBonus = 1 + clamp01((Math.abs(this.slipAngle) - 0.09) / 0.42) * 1.60;
+    const limit = Math.min(d.steerMax,
+      lerp(d.steerMax, d.steerMaxFast, t * t * 0.85 + t * 0.15) * slideBonus);
     const target = steer * limit;
     this.rackAngle = moveToward(this.rackAngle, target, d.steerRate * dt);
 
@@ -748,12 +786,28 @@ export class Car {
     this.pitchAngle = this.aero.pitchAngle;
     this.rollAngle = this.aero.rollAngle;
 
-    // Drift: chassis slip angle, reinforced by rear-tyre skid and the handbrake.
+    // ── drift signal ──────────────────────────────────────────────────
+    //
+    // Chassis slip angle, reinforced by SIDEWAYS tyre scrub.
+    //
+    // This used to read `rearSkid` and `skid`, which are total contact-patch
+    // sliding — they include a wheel spinning up under power and a wheel locked
+    // under braking, neither of which is a drift. Measured on cruiser, standing
+    // start, full throttle, zero steering: chassis slip stayed at 0.0° and
+    // `driftFactor` still reached 0.88, so `isDrifting` (> 0.22) was true and
+    // the tyre marks, the dust plume and the tyre squeal all fired while the
+    // car tracked dead straight. A straight-line panic stop did the same at
+    // 0.64. Every one of those consumers is downstream of this single number.
+    //
+    // `skidLat` is the same intensity curve driven by the lateral patch
+    // velocity alone, so a burnout and a lock-up no longer read as a slide.
+    // `skid` is untouched and still feeds `wheel.skidIntensity`, because a
+    // locked wheel does lay rubber — that is a tyre mark, not a drift.
     const bySlip = clamp01((Math.abs(this.slipAngle) - 0.075) / 0.42) * clamp01(Math.abs(this.speed) / 1.9);
-    const bySkid = this.rearSkid * 0.9;
+    const bySkid = this.rearLateralSkid * 0.9;
     // A four-wheel slide barely shows up as a chassis slip angle, but it is
     // very much a drift as far as the tyre marks and the audio are concerned.
-    const byScrub = this.skid * 0.55;
+    const byScrub = this.lateralSkid * 0.55;
     const grounded = this.wheelsOnGround > 0 ? 1 : 0;
     const target = Math.max(bySlip, Math.max(bySkid, byScrub) * grounded);
     this.driftFactor = damp(this.driftFactor, clamp01(target), 14, dt);
@@ -918,6 +972,7 @@ export class Car {
     this.airFallSpeed = 0; this.airHeight = 0; this.lastLandImpact = 0;
     this.upsideDown = false; this.stuckTime = 0; this.offTrackTime = 0;
     this.wheelsOnGround = 0; this.skid = 0; this.rearSkid = 0;
+    this.lateralSkid = 0; this.rearLateralSkid = 0;
     this.gear = 1; this.rpm = this.def.idleRpm;
     this.group.position.copy(position);
     if (quaternion) this.group.quaternion.copy(quaternion);

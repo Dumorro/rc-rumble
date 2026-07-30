@@ -28,12 +28,19 @@
  *
  * That makes the two properties that actually decide game feel directly
  * dialable, and — since the fit moved off the asymptote — the numbers now mean
- * what they say. `slideLat` = 0.84 means a fully sideways tyre returns 84 % of
- * its peak lateral force, which is *why* a Re-Volt slide is catchable; a
- * partial drift keeps more (≈ 93 % at 24°, ≈ 88 % at 43°). `slideLong` = 0.58
- * means a locked wheel returns 58 % of its peak stopping force, so over-braking
- * is punished. Both were previously fitted at infinite slip, which no channel
- * can reach, and so delivered ≈ 88 % and ≈ 70 % instead.
+ * what they say. `slideLong` = 0.58 means a locked wheel returns 58 % of its
+ * peak stopping force, so over-braking is punished. `slideLat` = 0.64 (BASE)
+ * means a fully sideways tyre returns 64 % of its peak cornering force, and a
+ * partial drift keeps more (≈ 0.89 at 25°, ≈ 0.83 at 35°, ≈ 0.78 at 45°).
+ * Both were previously fitted at infinite slip, which no channel can reach, and
+ * so delivered ≈ 88 % and ≈ 70 % instead.
+ *
+ * `slideLat` used to be 0.84, which put the whole 25°–90° range inside a
+ * 0.92 → 0.84 band: the tyre had no slide REGIME at all, so a rear axle could
+ * only ever grip (and snap the car straight) or be overwhelmed (and spin it).
+ * The number that makes a slide CATCHABLE is not this one — catchability comes
+ * from the front axle, which in a countersteered slide works at small slip
+ * angles near the peak where this curve is untouched. See CarDefs.js.
  *
  * Also modelled
  * -------------
@@ -207,7 +214,14 @@ export class Tire {
     this.camberStiffness = t.camberStiffness;
     this.relaxLong = Math.max(0.006, t.relaxLong);
     this.relaxLat = Math.max(0.008, t.relaxLat);
-    this.rollResist = t.rollResist;
+    /**
+     * Per-axle. The rear runs higher than the front deliberately — the torque
+     * pulls the rear tyres into a small negative slip ratio on a trailing
+     * throttle, that longitudinal demand comes out of the same friction budget
+     * as the cornering force, and the tail therefore lets go first when the
+     * driver lifts. See `ROLL_COEFF_REAR` in CarDefs.js.
+     */
+    this.rollResist = isFront ? t.rollResistFront : t.rollResistRear;
     this.inertia = t.inertia;
     /** Reference load for the load-sensitivity curve (N). */
     this.nominalLoad = Math.max(0.5, isFront
@@ -234,8 +248,18 @@ export class Tire {
     this.peakForce = 0;
     /** |F| / peakForce, 0..1+ — how close this tyre is to letting go. */
     this.saturation = 0;
-    /** 0..1 skid intensity for tyre marks / squeal. */
+    /** 0..1 skid intensity for tyre marks — ANY sliding, including a locked
+     *  wheel or a spinning one going perfectly straight. */
     this.skid = 0;
+    /**
+     * 0..1 skid intensity from the SIDEWAYS component of the slide only.
+     *
+     * `skid` is the right signal for a tyre mark: a wheel locked under braking
+     * lays rubber whether or not the car is sideways. It is the wrong signal
+     * for "is this car drifting", which is what `car.driftFactor` answers for
+     * FX, audio and scoring — and it was being used for both.
+     */
+    this.skidLat = 0;
     /** Contact-patch sliding speed (m/s). */
     this.slipSpeed = 0;
     /** ∂Fx/∂ω — consumed by the implicit wheel-spin integrator. */
@@ -250,7 +274,7 @@ export class Tire {
     this.slipRatio = 0; this.slipAngle = 0;
     this.slipRatioRaw = 0; this.slipAngleRaw = 0;
     this.fx = 0; this.fy = 0;
-    this.saturation = 0; this.skid = 0; this.slipSpeed = 0;
+    this.saturation = 0; this.skid = 0; this.skidLat = 0; this.slipSpeed = 0;
     this.dFxDomega = 0; this.alignTorque = 0;
     this.peakForce = 0;
   }
@@ -282,7 +306,7 @@ export class Tire {
       this.slipRatioRaw = 0; this.slipAngleRaw = 0;
       this.fx = 0; this.fy = 0;
       this.peakForce = 0; this.saturation = 0;
-      this.skid = 0; this.slipSpeed = 0;
+      this.skid = 0; this.skidLat = 0; this.slipSpeed = 0;
       this.dFxDomega = 0; this.alignTorque = 0;
       return;
     }
@@ -313,28 +337,70 @@ export class Tire {
     this.slipRatio += (kappa - this.slipRatio) * cLong;
     this.slipAngle += (alpha - this.slipAngle) * cLat;
 
-    // ── magic formula ──────────────────────────────────────────────────
-    let fx0 = D * this.longCurve.shape(this.slipRatio);
-    // Lateral force opposes the lateral patch motion, hence the sign flip.
-    let fy0 = -D * this.latCurve.shape(this.slipAngle);
+    // ── combined slip ──────────────────────────────────────────────────
+    //
+    // ONE friction budget, spent along the direction the patch is actually
+    // sliding. This replaced a post-hoc friction ellipse that was arithmetically
+    // incapable of taking the lateral force away from a locked wheel, which is
+    // why the cars could not drift.
+    //
+    // The old form evaluated each channel at its own slip and then scaled both
+    // by 1/e with e = hypot(fx/D, fy/(0.985·D)). A locked wheel only ever
+    // DEMANDS `slideLong` (0.580) longitudinally, so at full lateral grip
+    // e = hypot(0.580, 1.015) = 1.169 and scale = 0.855, against 0.985 for a
+    // free-rolling tyre — a ratio of 0.868. **A fully locked tyre kept 87 % of
+    // its cornering force.** The handbrake stopped the car instead of rotating
+    // it, and no combination of inputs could exceed ~9.5° of chassis slip.
+    //
+    // Now: normalise each slip by its own peak, take the resulting vector, read
+    // ONE force magnitude at the combined slip, and point it opposite the slide.
+    // A locked wheel has |sx| ≫ |sy|, so the direction is almost pure
+    // longitudinal and the lateral share falls out as sy/s — roughly 9 % rather
+    // than 87 %. Nothing is clamped and nothing is scaled after the fact; the
+    // ellipse is implicit in the geometry, which is where it belongs.
+    const sx = this.slipRatio / this.longCurve.peakAt;
+    const sy = this.slipAngle / this.latCurve.peakAt;
+    const s = Math.sqrt(sx * sx + sy * sy);
 
-    // Camber thrust: a leaning tyre pushes toward the lean.
-    if (camber !== 0) {
-      fy0 += this.camberStiffness * camber * load;
+    let fx0 = 0, fy0 = 0;
+    if (s > 1e-9) {
+      // Direction cosines in normalised-slip space. wx² + wy² = 1.
+      const wx = sx / s;
+      const wy = sy / s;
+      const kx = wx * wx;
+      const ky = wy * wy;
+      // Both authored slide numbers survive: a pure-longitudinal slide reads
+      // the long curve at its own operating point and returns slideLong, a
+      // pure-lateral one returns slideLat, and mixed slides blend by direction.
+      const magLong = this.longCurve.shape(s * this.longCurve.peakAt);
+      const magLat = this.latCurve.shape(s * this.latCurve.peakAt);
+      // shape() is odd and s ≥ 0, so both are ≥ 0 here; the sign comes from w.
+      const mag = magLong * kx + magLat * ky;
+      // Lateral peaks a touch lower than longitudinal on a real tyre. Kept as a
+      // directional blend rather than the old separate normalisation constant.
+      const f = D * mag * (kx + 0.985 * ky);
+      fx0 = f * wx;
+      fy0 = -f * wy;
+      this.saturation = s;
+    } else {
+      this.saturation = 0;
     }
 
-    // ── friction ellipse ───────────────────────────────────────────────
-    // Both channels draw on the same patch. Normalise by the per-axis peak
-    // (lateral peaks a touch lower than longitudinal on a real tyre).
-    const dLat = D * 0.985;
-    const ex = fx0 / (D || 1);
-    const ey = fy0 / (dLat || 1);
-    const e = Math.sqrt(ex * ex + ey * ey);
-    let scale = 1;
-    if (e > 1) scale = 1 / e;
-    this.fx = fx0 * scale;
-    this.fy = fy0 * scale;
-    this.saturation = e;
+    // Camber thrust: a leaning tyre pushes toward the lean. Applied after the
+    // budget because it is a geometric effect, not patch sliding — but it may
+    // not conjure grip a sliding tyre does not have, so it is capped by what
+    // is left of the lateral budget.
+    if (camber !== 0) {
+      const headroom = Math.max(0, D - Math.abs(fy0));
+      fy0 += clamp(this.camberStiffness * camber * load, -headroom, headroom);
+    }
+
+    this.fx = fx0;
+    this.fy = fy0;
+    // The implicit wheel solver used to be handed the ellipse's scale factor.
+    // There is no longer a post-hoc scale, so it gets 1 and picks up the
+    // saturation through the slope falloff below instead.
+    const scale = 1;
 
     // ── linearisation for the implicit wheel solver ────────────────────
     // Fx ≈ D·(B·C)·κ near zero, κ = (ωr − vx)/vRef, and the lag scales the
@@ -353,7 +419,11 @@ export class Tire {
     const bySpeed = smoothstep((slipSpeed - SKID_ON) / (SKID_FULL - SKID_ON));
     const bySat = smoothstep((this.saturation - 0.80) / 0.35);
     const byLoad = clamp01(loadRatio * 1.6);
-    this.skid = clamp01(bySpeed * lerp(0.35, 1, bySat) * byLoad);
+    const shared = lerp(0.35, 1, bySat) * byLoad;
+    this.skid = clamp01(bySpeed * shared);
+    // Same intensity curve, driven by the SIDEWAYS sliding speed alone.
+    const absVy = vy < 0 ? -vy : vy;
+    this.skidLat = clamp01(smoothstep((absVy - SKID_ON) / (SKID_FULL - SKID_ON)) * shared);
 
     // ── pneumatic-trail-ish aligning torque (telemetry / FFB) ──────────
     const trail = 0.28 * this.width * (1 - clamp01(Math.abs(this.slipAngle) / (this.latCurve.peakAt * 2.2)));

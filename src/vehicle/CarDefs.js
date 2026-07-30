@@ -44,8 +44,28 @@ export const CAR_CLASSES = Object.freeze([
  */
 const TORQUE_AT_TOP = 0.78;
 
-/** Rolling-resistance coefficient (fraction of vertical load). */
+/**
+ * Rolling-resistance coefficient (fraction of vertical load), FRONT axle.
+ *
+ * Split front/rear on purpose — see `ROLL_COEFF_REAR`.
+ */
 const ROLL_COEFF = 0.018;
+
+/**
+ * Rolling-resistance coefficient on the REAR axle.
+ *
+ * Higher than the front, and that asymmetry is a handling knob rather than a
+ * fidelity detail. Rolling resistance is a torque on the wheel, so it drags the
+ * rear tyres into a small NEGATIVE slip ratio the instant the driver lifts. In
+ * the combined-slip tyre that longitudinal demand is spent out of the same
+ * friction budget as the cornering force, so the rear gives up its grip first
+ * on a trailing throttle — which is lift-off oversteer, the cheapest and most
+ * readable way into a Re-Volt drift.
+ *
+ * With both axles at 0.018 the car has no lift-off behaviour at all: lifting
+ * mid-corner simply slows it down in a straight-ish line.
+ */
+const ROLL_COEFF_REAR = 0.040;
 
 /** How far past the redline the limiter lets the engine run. Caps top speed. */
 const LIMITER_OVERRUN = 1.022;
@@ -145,9 +165,23 @@ const BASE = {
     frequencyRear: null,  // null ⇒ same as front
     bumpRatio: 0.36,      // damping ratio, compression
     reboundRatio: 0.58,   // damping ratio, extension
-    /** Anti-roll bar rates as a fraction of the corner spring rate. */
-    arbFront: 0.30,
-    arbRear: 0.18,
+    /**
+     * Anti-roll bar rates as a fraction of the corner spring rate.
+     *
+     * REAR STIFFER THAN FRONT, on every car. Suspension.js has said in its own
+     * header for as long as it has existed that a stiffer front bar causes
+     * understeer and a stiffer rear bar causes oversteer — and every car was
+     * nonetheless authored front-stiff (ratios 1.23 to 2.40). A stiffer bar
+     * moves lateral load transfer onto its own axle, and because the tyre is
+     * load-sensitive (`loadSensitivity`) an axle that carries more of the
+     * transfer makes less total grip. Front-stiff therefore means the front
+     * axle gives up first, everywhere, on every car.
+     *
+     * The rear/front ratio here is the fine balance knob; `gripRear/grip` is
+     * the coarse one.
+     */
+    arbFront: 0.22,
+    arbRear: 0.30,
     /** Progressive bump stop: engages past this fraction of travel. */
     bumpStopStart: 0.84,
     bumpStopRate: 9.0,    // × spring rate at full compression
@@ -164,22 +198,61 @@ const BASE = {
   tyre: {
     radius: 0.033,
     width: 0.028,
-    /** Base friction coefficient on a grip-1.00 surface. */
-    grip: 1.06,
-    gripRear: null,       // null ⇒ same as front
+    /**
+     * Base friction coefficient on a grip-1.00 surface, FRONT axle.
+     *
+     * ── the balance rule, and why it is the way round it is ──
+     * `gripRear` is LOWER than `grip` on every car in the roster. Every car
+     * used to be authored the other way (rear ≥ front on 8 of 8), which is the
+     * textbook recipe for terminal understeer: the front lets go first, the
+     * nose washes wide, and the car cannot be rotated by anything the driver
+     * does. It made the whole roster undriftable, which is the one thing a
+     * Re-Volt clone cannot be.
+     *
+     * The rear/front ratio is now the primary per-car personality knob:
+     *   ≈0.95  forgiving — the tail moves, then parks itself (pebble, vanster)
+     *   ≈0.92  neutral   — rotates on demand, settles by itself (toyeca, stomper, wedge)
+     *   ≈0.86  loose     — holds a big angle, needs a driver (needle, phantom)
+     * Cars are NOT tuned to the same number: a pro car should be a different
+     * machine, not merely a faster one.
+     */
+    grip: 1.08,
+    /** REAR axle friction. null ⇒ same as front — deliberately never used. */
+    gripRear: 1.00,
     /** Slip ratio / slip angle at which each curve peaks. */
     peakSlipRatio: 0.125,
     peakSlipAngle: 0.145, // rad ≈ 8.3°
     /**
-     * Force in a full slide ÷ peak force. THE feel knob:
-     *  · slideLat  high (≈0.84) ⇒ a slide keeps most of its grip ⇒ catchable.
-     *  · slideLong low  (≈0.58) ⇒ a locked wheel stops badly ⇒ over-braking hurts.
+     * Force in a full slide ÷ peak force. THE feel knob.
+     *
+     *  · slideLong low (≈0.58) ⇒ a locked wheel stops badly ⇒ over-braking hurts.
+     *  · slideLat  is what decides whether a DRIFT can exist at all.
+     *
+     * ── why slideLat came down from 0.84 ──
+     * At 0.84 / E 0.42 the lateral curve is very nearly flat: measured off the
+     * fitted curve, a tyre at 25° of slip angle still returns 0.921 of its peak
+     * force, at 35° 0.894, at 45° 0.876. There is no slide REGIME — the tyre is
+     * either gripping or gripping. A rear axle that keeps ~90 % of its
+     * cornering force at 40° cannot sit at 40°: it snaps the car straight the
+     * moment the driver countersteers, and if it is overwhelmed instead it goes
+     * to 100°+ with nothing in between. Both failures were all over the
+     * measurement grid, and neither is a drift.
+     *
+     * At 0.64 / E 0.58 the same curve reads 0.89 at 25°, 0.83 at 35°, 0.78 at
+     * 45°: still a strong tyre, but now with somewhere to slide TO. It also
+     * costs less speed, because the force a sliding tyre makes at 40° points
+     * mostly backwards along the car's path — a softer slide regime is a
+     * smaller brake, and the measured exit speed went UP, not down.
+     *
+     * Catchability did not come from this knob and does not depend on it. It
+     * comes from the FRONT axle, which in a countersteered slide works at small
+     * slip angles near the peak, where the curve is untouched (0.96–1.00).
      */
-    slideLat: 0.840,
+    slideLat: 0.640,
     slideLong: 0.580,
     /** Magic-formula E — how flat-topped the curve is before the peak (0..0.9). */
     curveLong: 0.30,
-    curveLat: 0.42,
+    curveLat: 0.58,
     /** Grip lost per unit of load above the static corner load. */
     loadSensitivity: 0.135,
     /** Lateral force per radian of camber, as a fraction of Fz. */
@@ -187,7 +260,10 @@ const BASE = {
     /** Relaxation lengths (m) — forces build over distance, not instantly. */
     relaxLong: 0.055,
     relaxLat: 0.095,
+    /** Front-axle rolling resistance. */
     rollResist: ROLL_COEFF,
+    /** Rear-axle rolling resistance. null ⇒ same as front. See ROLL_COEFF_REAR. */
+    rollResistRear: ROLL_COEFF_REAR,
     /** Wheel rotational inertia (kg·m²). */
     inertia: 1.9e-5,
   },
@@ -270,10 +346,18 @@ const RAW = [
     susp: {
       travel: 0.046, frequency: 4.55, frequencyRear: 4.35,
       bumpRatio: 0.40, reboundRatio: 0.62,
-      arbFront: 0.24, arbRear: 0.16,
+      arbFront: 0.20, arbRear: 0.26,
       camberStatic: -0.020,
     },
-    tyre: { radius: 0.0345, width: 0.032, grip: 1.10, peakSlipAngle: 0.170, relaxLat: 0.105 },
+    // The most forgiving balance in the field (0.955). The tail steps out when
+    // provoked and then puts itself away — a rookie car should reward a flick
+    // without ever needing to be caught.
+    tyre: {
+      radius: 0.0345, width: 0.032, grip: 1.10, gripRear: 1.05,
+      peakSlipAngle: 0.170, relaxLat: 0.105, rollResistRear: 0.034,
+      // Fattest slide regime in the field — a rookie's slide barely scrubs.
+      slideLat: 0.720,
+    },
     aero: { downforce: 0.16, airPitch: 0.0225, airRoll: 0.0115, selfLevel: 0.0155 },
     colorPrimary: 0x2fa8dd, colorSecondary: 0xf2f4f7, colorAccent: 0xffcf2e,
     antennaColor: 0xffe11a,
@@ -299,6 +383,9 @@ const RAW = [
     diff: 'lsd', diffLock: 0.55,
     chassis: 'metal',
     weightFront: 0.53,
+    // The benchmark car deliberately inherits the BASE balance (1.08 / 1.00,
+    // ratio 0.926) and the BASE bars. Everything else in the roster is read as
+    // an offset from Toyeca, so Toyeca IS the default.
     colorPrimary: 0xe23b2c, colorSecondary: 0x22262e, colorAccent: 0xd8dde4,
     antennaColor: 0x2fe08a,
     rating: { speed: 3, accel: 3, grip: 3, weight: 3 },
@@ -342,13 +429,20 @@ const RAW = [
     susp: {
       travel: 0.042, frequency: 5.25, frequencyRear: 5.15,
       bumpRatio: 0.40, reboundRatio: 0.60,
-      // A tall front-drive van understeers on its own; a stiff front bar on top
-      // of that just makes the inside front wheel useless. Keep the bar modest
-      // and let the (deliberately) lower rear grip do the balancing.
-      arbFront: 0.36, arbRear: 0.15,
+      // A tall front-drive van understeers on its own, so the bars sit almost
+      // neutral with a whisker of rear bias. Front-stiff on top of the natural
+      // understeer is what made this car impossible to rotate at all.
+      arbFront: 0.26, arbRear: 0.28,
       forceLift: 0.26,
     },
-    tyre: { grip: 1.14, gripRear: 1.24, width: 0.030, peakSlipAngle: 0.180, relaxLat: 0.105 },
+    // 1.16 / 1.10 — ratio 0.948, the most reluctant balance in the field, and
+    // still on the drifting side of 1.0. It used to be 1.14 / 1.24: MORE rear
+    // grip than front, which is a setup that cannot be rotated by any input.
+    // A van that will not slide at all is not "safe", it is inert.
+    tyre: {
+      grip: 1.16, gripRear: 1.10, width: 0.030, peakSlipAngle: 0.180,
+      relaxLat: 0.105, rollResistRear: 0.032, slideLat: 0.720,
+    },
     aero: {
       lateralDrag: 4.1, downforce: 0.14, downforceZ: 0.012,
       airPitch: 0.0195, selfLevel: 0.0115,
@@ -384,16 +478,18 @@ const RAW = [
     susp: {
       travel: 0.072, anchorY: 0.030, frequency: 3.55, frequencyRear: 3.45,
       bumpRatio: 0.44, reboundRatio: 0.66,
-      arbFront: 0.16, arbRear: 0.13,
+      arbFront: 0.14, arbRear: 0.20,
       bumpStopStart: 0.80, bumpStopRate: 7.0,
       camberStatic: -0.012, camberPerComp: -0.30,
       forceLift: 0.34,
     },
     tyre: {
-      radius: 0.050, width: 0.044, grip: 1.13,
+      radius: 0.050, width: 0.044, grip: 1.15, gripRear: 1.06,
       peakSlipAngle: 0.190, peakSlipRatio: 0.150,
       relaxLat: 0.125, relaxLong: 0.070, inertia: 5.6e-5,
-      loadSensitivity: 0.100,
+      loadSensitivity: 0.100, rollResistRear: 0.042,
+      // Big soft balloon tyres: they let go slowly and keep a lot when they do.
+      slideLat: 0.700,
     },
     aero: {
       lateralDrag: 4.4, downforce: 0.10, groundEffect: 0.10,
@@ -432,13 +528,16 @@ const RAW = [
     susp: {
       travel: 0.026, anchorY: 0.006, frequency: 6.35, frequencyRear: 6.05,
       bumpRatio: 0.34, reboundRatio: 0.56,
-      arbFront: 0.42, arbRear: 0.26,
+      arbFront: 0.28, arbRear: 0.44,
       camberStatic: -0.045, camberPerComp: -0.70,
       forceLift: 0.15,
     },
     tyre: {
-      radius: 0.030, width: 0.032, grip: 1.09, gripRear: 1.13,
-      peakSlipAngle: 0.132, relaxLat: 0.085,
+      // 1.12 / 1.00 — ratio 0.893. The blurb promises "glued down until it
+      // isn't"; the old 1.09 / 1.13 delivered only the first half.
+      radius: 0.030, width: 0.032, grip: 1.12, gripRear: 1.00,
+      peakSlipAngle: 0.132, relaxLat: 0.085, rollResistRear: 0.044,
+      slideLat: 0.600,
     },
     aero: { downforce: 0.30, airPitch: 0.0195, airRoll: 0.0135, selfLevel: 0.0105 },
     colorPrimary: 0x6a2fbf, colorSecondary: 0xf0c24a, colorAccent: 0xe8e2d0,
@@ -474,15 +573,20 @@ const RAW = [
     susp: {
       travel: 0.028, anchorY: 0.008, frequency: 6.85, frequencyRear: 6.45,
       bumpRatio: 0.33, reboundRatio: 0.55,
-      arbFront: 0.50, arbRear: 0.32,
+      arbFront: 0.32, arbRear: 0.52,
       camberStatic: -0.055, camberPerComp: -0.85,
       forceLift: 0.12,
     },
     tyre: {
-      radius: 0.032, width: 0.036, grip: 1.15, gripRear: 1.20,
+      // 1.22 / 1.04 — ratio 0.852, the loosest car in the roster, and the only
+      // one whose front bar is 0.62 of its rear. "Vicious turn-in, zero
+      // forgiveness" is a promise about the BALANCE, not about the grip level.
+      radius: 0.032, width: 0.036, grip: 1.22, gripRear: 1.04,
       peakSlipAngle: 0.120, peakSlipRatio: 0.110,
-      slideLat: 0.795, curveLat: 0.52, relaxLat: 0.075, relaxLong: 0.045,
-      loadSensitivity: 0.160,
+      // Sharpest drop-off in the roster: enormous peak, and very little left
+      // once it is past. Vicious, exactly as advertised.
+      slideLat: 0.545, curveLat: 0.62, relaxLat: 0.075, relaxLong: 0.045,
+      loadSensitivity: 0.160, rollResistRear: 0.046,
     },
     aero: {
       downforce: 0.62, downforceZ: 0.070, groundEffect: 0.55,
@@ -521,13 +625,16 @@ const RAW = [
     susp: {
       travel: 0.030, anchorY: 0.009, frequency: 6.45, frequencyRear: 6.25,
       bumpRatio: 0.34, reboundRatio: 0.56,
-      arbFront: 0.44, arbRear: 0.30,
+      arbFront: 0.30, arbRear: 0.46,
       camberStatic: -0.048, camberPerComp: -0.78,
       forceLift: 0.13,
     },
     tyre: {
-      radius: 0.031, width: 0.034, grip: 1.17,
+      // 1.20 / 1.09 — ratio 0.908. All-wheel drive plus the tightest balance of
+      // the two supers: quick, and it puts itself straight.
+      radius: 0.031, width: 0.034, grip: 1.20, gripRear: 1.09,
       peakSlipAngle: 0.128, peakSlipRatio: 0.118, relaxLat: 0.078,
+      rollResistRear: 0.040, slideLat: 0.660,
     },
     aero: {
       downforce: 0.55, downforceZ: 0.058, groundEffect: 0.48,
@@ -565,13 +672,16 @@ const RAW = [
     susp: {
       travel: 0.032, anchorY: 0.010, frequency: 6.05, frequencyRear: 5.75,
       bumpRatio: 0.32, reboundRatio: 0.54,
-      arbFront: 0.38, arbRear: 0.22,
+      arbFront: 0.24, arbRear: 0.40,
       camberStatic: -0.042, camberPerComp: -0.72,
       forceLift: 0.12,
     },
     tyre: {
-      radius: 0.031, width: 0.030, grip: 1.12, gripRear: 1.14,
+      // 1.16 / 1.00 — ratio 0.862. Light, rear-driven and loose: the twitchiest
+      // thing in the game, one step short of needle.
+      radius: 0.031, width: 0.030, grip: 1.16, gripRear: 1.00,
       peakSlipAngle: 0.138, relaxLat: 0.082, inertia: 1.5e-5,
+      rollResistRear: 0.044, slideLat: 0.590,
     },
     aero: {
       downforce: 0.44, downforceZ: 0.052, groundEffect: 0.42,
@@ -737,6 +847,12 @@ export function defineCar(raw) {
   // ── tyre (Tire.js fits B/C/D/E from these) ──────────────────────────
   t.gripFront = t.grip;
   t.gripRearEff = t.gripRear ?? t.grip;
+  t.rollResistFront = t.rollResist;
+  t.rollResistRear = t.rollResistRear ?? t.rollResist;
+  /** Axle-averaged rolling resistance — for whole-car estimates only. */
+  t.rollResistMean = (t.rollResistFront + t.rollResistRear) * 0.5;
+  /** Rear/front grip ratio. < 1 ⇒ the tail lets go first ⇒ the car can drift. */
+  t.balance = t.gripRearEff / t.gripFront;
 
   // ── inertia estimate (about the COM) ────────────────────────────────
   const m = d.mass;
@@ -786,7 +902,7 @@ function estimateZeroToTop(d) {
     if (shiftT > 0) { torque *= d.shiftTorqueDip; shiftT -= h; }
     if (v >= d.topSpeed * (d.limiterRpm / d.redlineRpm)) torque = 0;
     const thrust = (torque * ratio) / r;
-    const drag = d.aero.dragK * v * v + d.tyre.rollResist * d.weight;
+    const drag = d.aero.dragK * v * v + d.tyre.rollResistMean * d.weight;
     const iRefl = d.tyre.inertia
       + (d.drivenCount > 0 ? (d.engineInertia * ratio * ratio) / d.drivenCount : 0);
     const mEff = d.mass

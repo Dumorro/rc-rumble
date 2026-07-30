@@ -600,10 +600,38 @@ section('7 · Holdable-drift grid, per car per surface');
     const n = holdsBySurface.get(s.name) ?? 0;
     console.log(`    ${s.name}: ${n} of ${CAR_DEFS.length} cars can hold a drift`);
   }
-  ok(`ice: ${holdsBySurface.get('ice')} of ${CAR_DEFS.length} cars hold a drift`,
+  // These two are RATCHETS, not targets. They are set at the measured state so
+  // the next change cannot make drifting worse — they do NOT mean drifting is
+  // where it should be. Raise them as the numbers improve; never lower them.
+  ok(`ice: ${holdsBySurface.get('ice')} of ${CAR_DEFS.length} cars hold a drift (ratchet, min 5)`,
     (holdsBySurface.get('ice') ?? 0) >= 5, `${holdsBySurface.get('ice')}`);
-  ok(`gravel: ${holdsBySurface.get('gravel')} of ${CAR_DEFS.length} cars hold a drift`,
+  ok(`gravel: ${holdsBySurface.get('gravel')} of ${CAR_DEFS.length} cars hold a drift (ratchet, min 1)`,
     (holdsBySurface.get('gravel') ?? 0) >= 1, `${holdsBySurface.get('gravel')}`);
+
+  // WOOD IS THE REQUIREMENT AND IT IS NOT MET. Wood is the default racing
+  // surface — the museum's whole floor — so "can you drift" is really "can you
+  // drift on wood", and the answer is currently no for every car in the roster.
+  //
+  // This does NOT gate the build, for the same reason CONTRACT_KNOWN_INERT did
+  // not: a red that nobody can fix today trains everyone to ignore reds. It
+  // prints in full, in yellow, on every single run instead, and it cannot go
+  // quiet until the number moves.
+  //
+  // History: the friction ellipse was arithmetically inert (a locked tyre kept
+  // 87% of its cornering force) and peak reachable slip was 7.5-9.5 deg. That is
+  // fixed — peak slip is now 100-132 deg. But the cars rotate and CANNOT BE
+  // CAUGHT: the remaining causes are `gripRear >= gripFront` and
+  // `arbFront > arbRear`, both still true on 8 of 8 cars.
+  const wood = holdsBySurface.get('wood') ?? 0;
+  const TARGET_WOOD = 6;
+  if (wood < TARGET_WOOD) {
+    console.log(`\n\x1b[33m\x1b[1m  ! KNOWN GAP — DRIFT ON WOOD: ${wood} of ${CAR_DEFS.length} cars (target ${TARGET_WOOD})\x1b[0m`);
+    console.log('\x1b[2m      Wood is the default racing surface. Until this number moves, the game\'s'
+      + '\n      defining verb does not work where it matters most. Not gating — see the'
+      + '\n      comment at this assertion for what is left to do.\x1b[0m');
+  } else {
+    ok(`wood: ${wood} of ${CAR_DEFS.length} cars hold a drift`, true, `${wood}`);
+  }
 }
 
 // ───────────────────────────────────────────────────────── report
