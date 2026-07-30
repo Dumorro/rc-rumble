@@ -1,0 +1,21 @@
+{
+  "name": "rc-rumble",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AAA-quality RC car racing game in the spirit of Re-Volt (1999). Pure Three.js, 100% procedural assets.",
+  "scripts": {
+    "dev": "vite --host --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --port 4173",
+    "check": "node tools/check.mjs"
+  },
+  "keywords": ["threejs", "racing", "re-volt", "webgl"],
+  "license": "MIT",
+  "dependencies": {
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "vite": "^6.4.3"
+  }
+}
