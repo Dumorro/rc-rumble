@@ -6,6 +6,12 @@ along the way — which is the part worth learning.
 
 Budget about an hour. You need no browser until the very last step.
 
+![Toy Museum](screenshots/02-museum.jpg)
+
+*What you are aiming at: the Toy Museum's parquet hall. Everything in that frame — the
+floor material, the kerbs, the walls, the tyre marks, the dust — comes out of a track
+module about 1,000 lines long that talks only to `TrackBuilder`.*
+
 **Prerequisites:** read [`ARCHITECTURE.md`](../ARCHITECTURE.md) for units and the data
 contract. The [`build-track` skill](../.claude/skills/build-track/SKILL.md) is the
 condensed version of everything here; this document is the long-form walkthrough with the

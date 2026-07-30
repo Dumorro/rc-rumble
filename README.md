@@ -20,6 +20,38 @@ npm run dev     # http://localhost:5173
 Arrow keys or WASD to drive, Space handbrake, Ctrl/F to fire, C to change camera,
 R to respawn, H horn, M mute.
 
+---
+
+![Car select](docs/screenshots/05-car-select.jpg)
+
+*Car select. The car, its wheels, the chrome bumper and the wobbling antenna with its
+coloured ball are all generated from primitives at load time — there is no model file.
+The display typeface is drawn from vector paths on a canvas. Stats are read live from
+`CarDefs`, which is the same data the physics uses.*
+
+![Toy Museum](docs/screenshots/02-museum.jpg)
+
+*Toy Museum. Parquet, tyre marks laid down by the AI pack ahead, dust kicked off a slide.
+The floor material is painted from noise into a full PBR set — albedo, a Sobel-derived
+normal map, roughness and AO.*
+
+![Rocket Hall](docs/screenshots/03-rocket-hall.jpg)
+
+*The chequered lino of the Rocket Hall, with a Shockwave pickup collected and armed.
+Eight cars, ten weapons, live standings with gaps.*
+
+![Back Garden](docs/screenshots/04-garden.jpg)
+
+*Back Garden — gravel, lawn, a wooden kerb, and brake lights. Also visible: the washed-out
+horizon that is [issue #10](https://github.com/Dumorro/rc-rumble/issues/10). The sky
+gradient is correct if you aim the camera up; the haze is simply too strong for a camera
+sitting 40 cm off the ground.*
+
+These are unedited captures at 1600×900, `quality=high`, from the production build. They
+are the real state of the game, including its problems — the environments are barer than
+they should be and the frame rate in these shots ranged 38–60 fps, which is
+[issue #3](https://github.com/Dumorro/rc-rumble/issues/3).
+
 ## Status
 
 The game is playable end to end: menus → car select → track select → an 8-car race with

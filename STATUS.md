@@ -14,6 +14,20 @@ with Playwright on Chromium 150 / **Apple M1 (ANGLE Metal)**, viewport 1600×900
 
 ---
 
+## What it looks like right now
+
+Unedited captures from the production build, 1600×900, `quality=high`. Warts included —
+see the notes under each.
+
+| | |
+|---|---|
+| ![menu](docs/screenshots/01-main-menu.jpg) | ![car select](docs/screenshots/05-car-select.jpg) |
+| Main menu. Title glyphs and the checkered bar are drawn on a canvas from vector paths — no font file. | Car select. Model, wheels, bumper and antenna are generated from primitives; stats read live from `CarDefs`. |
+| ![museum](docs/screenshots/02-museum.jpg) | ![rocket hall](docs/screenshots/03-rocket-hall.jpg) |
+| Toy Museum parquet, with AI tyre marks and slide dust. **Note the bare background** — the camera sits too low to see the hall's set dressing. | Rocket Hall lino, Shockwave armed. Frame rate in these shots ranged 38–60 fps → [#3](https://github.com/Dumorro/rc-rumble/issues/3). |
+| ![garden](docs/screenshots/04-garden.jpg) | |
+| Back Garden. Gravel, lawn, wooden kerb, brake lights — and the washed-out horizon logged as [#10](https://github.com/Dumorro/rc-rumble/issues/10). | |
+
 ## Run it
 
 ```bash
