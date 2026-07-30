@@ -47,6 +47,23 @@ const GH_DOORS = {
 };
 const DECK = { x0: -44, x1: -34, z0: 24, z1: 36, y: 1.10 };
 const HOUSE = { x0: -46, x1: -30, z0: -6, z1: 16, h: 6.5 };
+/**
+ * Openings in the house, sized and placed where the racing line crosses — the
+ * same discipline as {@link GH_DOORS}, and for the same reason.
+ *
+ * The start/finish straight runs at x ≈ -37.7 from z = +16 to z = -6, which is
+ * *inside* the house footprint (x -46..-30, z -6..+16). Both of those walls used
+ * to be unbroken 16 m × 6.5 m brick slabs with a concrete eave roofing the whole
+ * footprint, so the racing line entered a sealed box, the grid's front row sat
+ * against the inside of the z = +16 wall, and lap 1 ended 18 m after the lights
+ * went out. Nobody had ever completed a lap of this track.
+ *
+ * Measured road extent at the two crossings: x -39.21..-36.06 (z = -6) and
+ * x -39.46..-36.30 (z = +16). The openings run x -41.0..-34.6, which clears the
+ * widest edge by 1.5 m on the outside and 1.5 m on the inside — the house reads
+ * as an open carport you race through, which is what it now is.
+ */
+const HOUSE_DOORS = { x0: -41.0, x1: -34.6 };
 const ROCKERY = { x: -30.5, z: -38.5, r: 5.2, h: 0.95 };
 
 const NODES = [
@@ -61,28 +78,41 @@ const NODES = [
   [4, 0, -34, 2.8],        // 8  ← the leaning plank ramp
   [14, 0, -32, 2.8],       // 9
   [23, 0, -29, 2.8],       // 10
-  [31, 0.15, -24, 2.6],    // 11 ← into the greenhouse
-  [37, 0.15, -16, 2.6],    // 12
-  [40, 0, -6, 2.8],        // 13
-  [41, 0, 6, 2.8],         // 14 ← sprinkler arc
-  [40, 0, 17, 2.8],        // 15
-  [40, 0, 28, 2.8],        // 16 ← pond plank branches off here
-  [36, 0, 36, 2.8],        // 17
-  [26, 0, 38, 2.8],        // 18
-  [16, 0, 37, 2.8],        // 19
-  [5, 0, 36, 2.8],         // 20
+  // The greenhouse floor is a 0.24 m slab (lawn -0.09 → tiles +0.15) and the
+  // line crosses its west face at x = 27. The centreline used to be at y = 0.071
+  // there, so the doorway presented a 7.9 cm vertical brick lip to a car with
+  // 3.3 cm wheels. The line now climbs the approach apron and arrives at door
+  // height; `buildGreenhouse` lays the threshold board over the last few cm.
+  [27.5, 0.15, -26.6, 2.7],// 11 ← the west door threshold
+  [31, 0.15, -24, 2.6],    // 12 ← into the greenhouse
+  [37, 0.15, -16, 2.6],    // 13
+  [40, 0, -6, 2.8],        // 14
+  [41, 0, 6, 2.8],         // 15 ← sprinkler arc
+  [40, 0, 17, 2.8],        // 16
+  [40, 0, 28, 2.8],        // 17 ← pond plank branches off here
+  [36, 0, 36, 2.8],        // 18
+  [26, 0, 38, 2.8],        // 19
+  [16, 0, 37, 2.8],        // 20
+  [5, 0, 36, 2.8],         // 21
   // ── an excursion out across the middle lawn and back ──
-  [-1, 0, 29, 2.8],        // 21
-  [-3, 0, 20, 2.6],        // 22
-  [-10, 0, 15, 2.6],       // 23
-  [-19, 0, 17, 2.6],       // 24
-  [-23, 0, 26, 2.6],       // 25
-  [-19, 0, 34, 2.8],       // 26
-  [-26, 0, 35, 2.6],       // 27
-  [-33, 0.55, 33, 2.6],    // 28 ← up the deck ramp
-  [-39, 1.10, 30, 2.6],    // 29 ← on the deck
-  [-40, 1.10, 25, 2.6],    // 30 ← launch
-  [-38, 0.30, 18, 3.0],    // 31 ← landing bank
+  [-1, 0, 29, 2.8],        // 22
+  [-3, 0, 20, 2.6],        // 23
+  [-10, 0, 15, 2.6],       // 24
+  [-19, 0, 17, 2.6],       // 25
+  [-23, 0, 26, 2.6],       // 26
+  [-19, 0, 34, 2.8],       // 27
+  [-26, 0, 35, 2.6],       // 28
+  // The deck ramp has to top out AT the deck's east edge (x = DECK.x1 = -34),
+  // not 5 m past it. It used to reach 1.10 m only at x = -39, so the ribbon
+  // crossed the deck edge at y = 0.66 — straight through the 0.98 m skirt board
+  // — and, had the skirt not been there, would have run on *underneath* the
+  // deck slab (its underside is at 1.04 m) and out the far side. There was no
+  // path onto the deck at all.
+  [-30.2, 0.55, 34.2, 2.6],// 29 ← up the deck ramp
+  [-34.0, 1.10, 32.9, 2.6],// 30 ← onto the boards, at the deck edge
+  [-39.0, 1.10, 29.8, 2.6],// 31 ← across the deck
+  [-40, 1.10, 25, 2.6],    // 32 ← launch
+  [-38, 0.30, 18, 3.0],    // 33 ← landing bank
 ];
 
 export default {
@@ -165,8 +195,10 @@ function keyTimes(b) {
   b._gardenT = {
     jumpFrom: b.tNear([-40, 1.10, 25.2]),
     jumpTo: b.tNear([-38.4, 0.32, 19.4]),
-    rampStart: b.tNear([-28.4, 0.05, 34.6]),
-    deckIn: b.tNear([-35.6, 1.02, 31.4]),
+    rampStart: b.tNear([-27.4, 0.05, 34.8]),
+    // The ribbon stops exactly at the deck's east edge; from here the deck
+    // boards are the surface, and they are already at the same 1.10 m.
+    deckIn: b.tNear([DECK.x1, DECK.y, 32.9]),
   };
   return b._gardenT;
 }
@@ -344,18 +376,23 @@ function buildPond(b) {
     width: 0.95,
     savedMetres: 8,
     nodes: [
-      { p: [39.6, 0.06, 24.4], w: 1.9 },
+      { p: [39.0, 0.02, 24.0], w: 1.9 },
       { p: [38.2, 0.26, 23.6], w: 1.1 },
       { p: [A[0], A[1], A[2]], w: 0.95 },
       { p: [31.0, 0.30, 29.5], w: 0.95 },
       { p: [Bb[0], Bb[1], Bb[2]], w: 0.95 },
       { p: [24.0, 0.24, 36.4], w: 1.1 },
-      { p: [23.2, 0.04, 37.6], w: 1.9 },
+      { p: [22.8, 0.005, 38.0], w: 1.9 },
     ],
   });
   // The plank itself: three boards, slightly bowed, on two trestles.
+  //
+  // Both end boards start at 3 cm, not 8–10 cm: the shortcut's mouth and its
+  // exit both sit inside the main racing corridor (0.86 m and 0.55 m off the
+  // centreline as measured), so their end grain was a kerb across the line for
+  // anyone who was NOT taking the shortcut.
   b.bridge({
-    from: [39.4, 0.10, 24.5], to: [A[0], A[1], A[2]],
+    from: [38.9, 0.02, 23.9], to: [A[0], A[1], A[2]],
     width: 1.2, thickness: 0.07,
     material: 'wood/oak_planks', surfaceId: SurfaceId.WOOD,
   });
@@ -366,9 +403,19 @@ function buildPond(b) {
     kerb: { height: 0.035, material: 'wood/pine_planks' },
     piers: { count: 2, radius: 0.075, depth: 0.55, material: 'wood/pine_planks' },
   });
+  // The run-out drops to 4.5 cm while it is still 1.5 m clear of the main line,
+  // then feathers in almost flat: the last board's *edges* reach the racing
+  // corridor a good metre before its centreline does, so a single board from
+  // 0.28 m straight to the merge lays a 9 cm kerb across the line for every car
+  // that did not take the shortcut.
   b.bridge({
-    from: [Bb[0], Bb[1], Bb[2]], to: [23.4, 0.08, 37.4],
+    from: [Bb[0], Bb[1], Bb[2]], to: [24.0, 0.045, 36.4],
     width: 1.2, thickness: 0.07,
+    material: 'wood/oak_planks', surfaceId: SurfaceId.WOOD,
+  });
+  b.bridge({
+    from: [24.0, 0.045, 36.4], to: [22.9, 0.010, 37.9],
+    width: 1.2, thickness: 0.05,
     material: 'wood/oak_planks', surfaceId: SurfaceId.WOOD,
   });
   void sc;
@@ -393,6 +440,18 @@ function buildGreenhouse(b) {
   b.addAt(slab, b.mat('tile/mosaic'), [cx, (H.y + LAWN_Y) / 2, cz], null, 1,
     { surfaceId: SurfaceId.TILE, cast: false, receive: true });
   slab.dispose();
+
+  // A threshold ramp at the west door. The slab's west face is a 0.24 m brick
+  // step (lawn at -0.09 up to the tiles at +0.15) and the racing line crosses it
+  // at y = 0.071 — a 7.9 cm vertical wall to a car whose wheels are 3.3 cm in
+  // radius. Every greenhouse has a threshold board; this is that board, laid
+  // along the line the cars actually take through the doorway.
+  b.ramp({
+    from: [26.10, 0.104, -27.49], to: [27.30, H.y + 0.002, -26.79],
+    width: 3.0, thickness: 0.04,
+    material: 'wood/pine_planks', matOpts: { color: 0x8f7448 },
+    surfaceId: SurfaceId.WOOD, support: false, lead: 0,
+  });
 
   // Every wall is built in spans that skip the two openings, and the same
   // openings are used for the brick dwarf wall AND the glazing — a gap in one
@@ -622,9 +681,12 @@ function buildRockery(b) {
     scaleRange: [0.6, 1.0], instanced: true,
   });
 
-  // A warning post at the blind crest.
+  // A warning post at the blind crest — anchored to the racing line and pushed
+  // 2.6 m off it, rather than hard-coded. At its old spot it sat 0.41 m from the
+  // centreline, i.e. inside the racing corridor, on a crest you go over blind.
+  const signP = b.point(b.tNear([-27.5, 0.9, -33.0]), 2.6, 0.62);
   b.prop('picture_frame', {
-    position: [-27.5, 0.9, -33.0], rotation: [0, -0.9, 0],
+    position: [signP.x, signP.y, signP.z], rotation: [0, -0.9, 0],
     width: 0.7, height: 0.4, text: 'BLIND CREST',
     background: '#9a7212', textColor: '#241b06', frameColor: 0x8a6a3a,
   });
@@ -704,7 +766,7 @@ function buildRampAndHose(b) {
   });
   b.ramp({
     from: [2.6, 0, -33.6], to: [6.2, 0.42, -35.0],
-    width: 2.2, thickness: 0.06,
+    width: 2.8, thickness: 0.06,
     material: 'wood/plywood_varnish', surfaceId: SurfaceId.WOOD,
     support: false, lead: 0.6,
   });
@@ -716,14 +778,18 @@ function buildRampAndHose(b) {
   });
   // The garden hose: a long tube snaking across the path. Solid, ~4 cm — enough
   // to unsettle the car if you cross it at an angle.
+  //
+  // It used to be built at radius 0.032 centred on y = 0.038, i.e. 7 cm tall:
+  // more than twice a wheel's radius, and it crosses the racing line square-on.
+  // 0.020 on 0.020 gives the 4 cm the comment always claimed.
   const hosePts = [];
   for (let i = 0; i <= 26; i++) {
     const f = i / 26;
     const x = -18 + f * 22;
     const z = -30.5 + Math.sin(f * 5.4) * 3.4 - f * 4.5;
-    hosePts.push(new THREE.Vector3(x, 0.038, z));
+    hosePts.push(new THREE.Vector3(x, 0.020, z));
   }
-  const hose = G.tubeAlong(hosePts, 0.032, 6, false, 0.4, 0.55);
+  const hose = G.tubeAlong(hosePts, 0.020, 6, false, 0.4, 0.55);
   b.add(hose, b.mat('rubber/floor_mat', { color: 0x2f6b3a }), {
     surfaceId: SurfaceId.RUBBER, cast: true, receive: true,
   });
@@ -792,19 +858,33 @@ function buildSprinklerArc(b) {
 
 function buildHouseAndFence(b) {
   const H = HOUSE;
-  // A slice of the house wall, so the garden has a believable owner.
-  b.wall([H.x1, H.z0], [H.x1, H.z1], {
+  const D = HOUSE_DOORS;
+  const brick = {
     thickness: 0.4, height: H.h,
     material: 'brick/red', surfaceId: SurfaceId.CONCRETE,
-  });
-  b.wall([H.x0, H.z0], [H.x1, H.z0], {
-    thickness: 0.4, height: H.h,
-    material: 'brick/red', surfaceId: SurfaceId.CONCRETE,
-  });
-  b.wall([H.x0, H.z1], [H.x1, H.z1], {
-    thickness: 0.4, height: H.h,
-    material: 'brick/red', surfaceId: SurfaceId.CONCRETE,
-  });
+  };
+  // The east wall is clear of the racing line (which runs at x ≈ -37.7), so it
+  // stays a solid slab.
+  b.wall([H.x1, H.z0], [H.x1, H.z1], brick);
+
+  // The two walls the racing line crosses are built in spans that skip the
+  // opening, exactly like the greenhouse — plus a lintel over it, so the gap
+  // reads as a wide carport opening rather than a missing wall.
+  const LINTEL = 2.6;
+  for (const z of [H.z0, H.z1]) {
+    for (const [s0, s1] of [[H.x0, D.x0], [D.x1, H.x1]]) {
+      if (s1 - s0 < 0.12) continue;
+      b.wall([s0, z], [s1, z], brick);
+    }
+    b.wall([D.x0, z], [D.x1, z], { ...brick, height: H.h - LINTEL, y: LINTEL });
+    // Piers either side of the opening so it reads as a doorway.
+    for (const x of [D.x0, D.x1]) {
+      const jamb = G.boxMeters(0.5, LINTEL, 0.5, { radius: 0.02, seg: 2 });
+      b.addAt(jamb, b.mat('concrete/rough', { color: 0xb4ab99 }), [x, LINTEL / 2, z], null, 1,
+        { surfaceId: SurfaceId.CONCRETE, cast: true, receive: true });
+      jamb.dispose();
+    }
+  }
   // Windows + a back door.
   for (let i = 0; i < 3; i++) {
     const z = H.z0 + 4 + i * 6;

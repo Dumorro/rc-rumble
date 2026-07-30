@@ -754,10 +754,18 @@ export class Impacts {
     if (!u) return;
     const sun = lighting?.sun;
     if (sun) {
-      _d.copy(sun.position);
-      const tgt = lighting.sunTarget?.position;
-      if (tgt) _d.sub(tgt);
-      if (_d.lengthSq() > 1e-8) u.uSunDir.value.copy(_d).normalize();
+      // `lightDirection` is the published contract (direction light TRAVELS, so
+      // negate for "toward the sun"). `sun.position` is only a fallback: under
+      // CSM the sun object is a parked, invisible placeholder.
+      const lit = lighting.lightDirection;
+      if (lit && lit.lengthSq() > 1e-8) {
+        u.uSunDir.value.copy(lit).normalize().negate();
+      } else {
+        _d.copy(sun.position);
+        const tgt = lighting.sunTarget?.position;
+        if (tgt) _d.sub(tgt);
+        if (_d.lengthSq() > 1e-8) u.uSunDir.value.copy(_d).normalize();
+      }
       u.uSunColor.value.copy(sun.color).multiplyScalar(clamp(sun.intensity ?? 2, 0, 8) * 0.34);
     }
     const hemi = lighting?.hemi;

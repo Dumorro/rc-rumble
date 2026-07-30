@@ -541,6 +541,15 @@ export class Weather {
 
   _readSun() {
     const lighting = this.game?.renderer?.lighting;
+    // `lighting.lightDirection` is the published contract: a unit vector along
+    // the direction light TRAVELS, so negate it for "toward the sun". Do NOT go
+    // back to `sun.position - sunTarget.position` — with CSM running, `sun` is a
+    // parked, invisible placeholder and its position is not authoritative.
+    const lit = lighting?.lightDirection;
+    if (lit && lit.lengthSq() > 1e-8) {
+      _sun.copy(lit).normalize().negate();
+      return;
+    }
     const sun = lighting?.sun;
     if (sun) {
       _v.copy(sun.position);

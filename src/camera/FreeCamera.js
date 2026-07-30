@@ -19,9 +19,8 @@
  */
 
 import * as THREE from 'three';
-import CONFIG from '../core/Config.js';
 import { clamp } from '../core/MathUtils.js';
-import { WORLD_UP } from './CameraPose.js';
+import { WORLD_UP, FOV_BASE } from './CameraPose.js';
 import { Spring, Vec3Spring, wrapPi } from './Spring.js';
 
 const _eye = new THREE.Vector3();
@@ -44,11 +43,11 @@ export class FreeCamera {
     this.yaw = 0.6;
     this.pitch = 0.35;
     this.distance = 3.0;
-    this.fovValue = CONFIG.render.fovBase;
+    this.fovValue = FOV_BASE;
 
     this.pos = new Vec3Spring(16, 1);
     this.focusSpring = new Vec3Spring(12, 1);
-    this.fov = new Spring(CONFIG.render.fovBase, 6, 1);
+    this.fov = new Spring(FOV_BASE, 6, 1);
 
     this.moveSpeed = 2.2;      // m/s at distance 3
     this.orbitSpeed = 1.6;     // rad/s from the steer axis

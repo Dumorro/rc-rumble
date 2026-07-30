@@ -129,9 +129,29 @@ export const SURFACES = Object.freeze([
     minimapColor: 0x9b9992,
   }),
 
+  // Grass must be SLOWER than gravel, or the garden's lawn is a better line than
+  // its own path and the whole risk/reward of that track is inverted. It was
+  // better than gravel on all four channels at once: 0.075 rolling resistance
+  // against 0.085, 0.09 drag against 0.10, 0.160 bumpiness against 0.280 — and a
+  // higher grip (0.60 vs 0.55) as well. Cutting a corner over the lawn was free.
+  //
+  // The grip column is frozen by ARCHITECTURE.md and stays as it is (long grass
+  // really does hold a tyre better than loose stones — that is the *reward* half
+  // of the trade). The cost is carried by rolling resistance, which is the one
+  // channel with a live consumer: `CarSystem._buildSurfaceTables` reads it as a
+  // multiplier of 0.018 (CarSystem.js:295-299), so 0.120 = 6.67× baseline where
+  // gravel's 0.085 = 4.72× and sand's 0.130 = 7.22×. Grass now costs 41% more
+  // rolling drag than the path it runs beside.
+  //
+  // `drag` and `bumpiness` are moved with it for consistency, but be honest
+  // about what they do today: `bumpiness` is read only by CameraDirector
+  // (CameraDirector.js:825) for camera shake, and nothing in src/ reads
+  // `SurfaceTable.drag` at all — the only `.drag` consumers are AeroBody and the
+  // particle integrator, both of which have their own field. Wiring those is a
+  // src/vehicle job, not a src/track one.
   surface(5, 'grass', {
-    grip: 0.60, rollingResistance: 0.075, bumpiness: 0.160, bumpFreq: 5.0,
-    drag: 0.09, restitution: 0.45, particle: 'grass', particleColor: 0x5d8a3c,
+    grip: 0.60, rollingResistance: 0.120, bumpiness: 0.230, bumpFreq: 5.0,
+    drag: 0.17, restitution: 0.45, particle: 'grass', particleColor: 0x5d8a3c,
     sfx: 'roll_grass', impactSfx: 'hit_soft',
     markOpacity: 0.10, markColor: 0x2f3a1d, squeal: 0.12, noise: 0.34,
     soft: true, offTrack: true, minimapColor: 0x5f8a3e,

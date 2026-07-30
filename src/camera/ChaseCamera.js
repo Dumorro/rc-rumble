@@ -27,7 +27,15 @@
  *    out slowly. A short downward ray keeps it out of the floor on steep climbs.
  *
  *  • **Speed FOV + corner roll.** fovBase + fovSpeedGain·speedFrac, a kick on
- *    boost, and up to ~4° of bank into corners.
+ *    boost, and up to ~4° of bank into corners. Both terms are NARROW on purpose
+ *    — see {@link FOV_BASE}; a wide lens is what makes a toy read as a car.
+ *
+ *  • **A whisper of tilt-shift.** `dofIntensity` per preset, with a ~14 m sharp
+ *    band and scene-scale falloffs, so the far end of the room goes gently soft.
+ *    Miniature photography is the one cue Re-Volt physically could not do, and
+ *    it is the strongest "these are 1:10 models" signal available. Subtle by
+ *    construction: intensity 0.35 with maxBlur 0.024 caps the blur radius at
+ *    0.0084 uv (~13 px at 1600 wide) and only reaches it ~28 m out.
  *
  * Presets reuse the same solver for chaseFar / bumper / cockpit / lookBack, so
  * every mode inherits the same lag, avoidance and FOV behaviour.
@@ -39,7 +47,9 @@ import * as THREE from 'three';
 import CONFIG from '../core/Config.js';
 import { clamp, clamp01, angleDelta, lerp } from '../core/MathUtils.js';
 import { createRayHit, Layer } from '../physics/index.js';
-import { CameraPose, WORLD_UP, dirFromYaw, framingUp, yawOf } from './CameraPose.js';
+import {
+  CameraPose, WORLD_UP, dirFromYaw, framingUp, yawOf, FOV_BASE, FOV_SPEED_GAIN,
+} from './CameraPose.js';
 import {
   AngleSpring, Spring, Vec3Spring, approach, lagCoefficient, addLagCompensation,
 } from './Spring.js';
@@ -47,8 +57,29 @@ import {
 const C = CONFIG.camera?.chase ?? {};
 
 /**
+ * Depth-of-field shape shared by every chase preset.
+ *
+ * These are ABSOLUTE metres against the linear depth buffer, so they have to
+ * suit the SCENE, not the car: a chase shot frames 10–30 m of room even though
+ * its subject is 0.3 m long. `range: 7` is ±7 m around the focal plane, i.e. the
+ * ~14 m sharp band the shot needs; `near/far` are how far past that band it
+ * takes to reach full blur. Autofocus locks the plane onto the player car
+ * (~1.2 m out), so in practice everything from the lens to ~8 m is crisp and the
+ * background rolls off from there — a hint of miniature, not a diorama.
+ *
+ * The failure mode this replaces is documented in CameraPose.focusRange: a 0.45 m
+ * band on a wide shot puts the subject itself at 85% blur.
+ */
+const CHASE_DOF = Object.freeze({ range: 7.0, near: 10.0, far: 20.0, maxBlur: 0.024 });
+
+/**
  * Tuning. Distances in metres at 1:10 RC scale — `distance: 1.05` means the
  * camera sits ~3.5 car-lengths back, which is Re-Volt-close.
+ *
+ * `fovBase`/`fovGain` are authored against {@link FOV_BASE}/{@link FOV_SPEED_GAIN},
+ * NOT against `CONFIG.render.fovBase` — read the doc on FOV_BASE before changing
+ * either, the old 62°/16° pair is the single loudest "this is a full-size car"
+ * cue the renderer had.
  */
 export const CHASE_PRESETS = Object.freeze({
   chase: {
@@ -87,11 +118,14 @@ export const CHASE_PRESETS = Object.freeze({
     rollMax: 0.070,
     rollOmega: 5.0,
 
-    fovBase: CONFIG.render.fovBase,
-    fovGain: CONFIG.render.fovSpeedGain,
+    fovBase: FOV_BASE,
+    fovGain: FOV_SPEED_GAIN,
     fovBoost: 5.5,
     fovDrift: 2.0,
     fovRate: 4.2,
+
+    /** Tilt-shift strength, 0..1. See CHASE_DOF. */
+    dof: 0.35,
 
     upBlend: 0.30,
     collide: true,
@@ -114,8 +148,8 @@ export const CHASE_PRESETS = Object.freeze({
     speedDistance: 0.46, speedHeight: 0.10, airDistance: 0.34, airHeight: 0.22,
     airLookLead: 0.12, pitchFromAir: 0.16,
     rollGain: 0.016, rollMax: 0.055, rollOmega: 4.4,
-    fovBase: CONFIG.render.fovBase - 4, fovGain: CONFIG.render.fovSpeedGain * 0.85,
-    fovBoost: 4.5, fovDrift: 1.6, fovRate: 3.8,
+    fovBase: FOV_BASE - 4, fovGain: FOV_SPEED_GAIN * 0.85,
+    fovBoost: 4.5, fovDrift: 1.6, fovRate: 3.8, dof: 0.35,
     upBlend: 0.22, collide: true, collideRadius: 0.12, minDistance: 0.45,
     floorClearance: 0.10,
     rigid: false, flip: false, shakeScale: 0.85, speedFx: 0.9,
@@ -133,8 +167,10 @@ export const CHASE_PRESETS = Object.freeze({
     speedDistance: 0.0, speedHeight: 0.0, airDistance: 0.0, airHeight: 0.0,
     airLookLead: 0.05, pitchFromAir: 0.05,
     rollGain: 0.034, rollMax: 0.105, rollOmega: 8.0,
-    fovBase: CONFIG.render.fovBase + 10, fovGain: CONFIG.render.fovSpeedGain * 1.15,
-    fovBoost: 6.5, fovDrift: 2.5, fovRate: 5.0,
+    fovBase: FOV_BASE + 10, fovGain: FOV_SPEED_GAIN * 1.15,
+    // Lighter from inside the car: you cannot see the car, so the scale cue is
+    // weaker, and a soft horizon costs corner readability at road level.
+    fovBoost: 6.5, fovDrift: 2.5, fovRate: 5.0, dof: 0.18,
     upBlend: 0.85, collide: false, collideRadius: 0.06, minDistance: 0,
     floorClearance: 0.025,
     rigid: true, flip: false, shakeScale: 1.5, speedFx: 1.25,
@@ -150,8 +186,8 @@ export const CHASE_PRESETS = Object.freeze({
     speedDistance: 0.0, speedHeight: 0.0, airDistance: 0.0, airHeight: 0.0,
     airLookLead: 0.06, pitchFromAir: 0.08,
     rollGain: 0.040, rollMax: 0.120, rollOmega: 7.0,
-    fovBase: CONFIG.render.fovBase + 4, fovGain: CONFIG.render.fovSpeedGain,
-    fovBoost: 6.0, fovDrift: 2.2, fovRate: 4.6,
+    fovBase: FOV_BASE + 4, fovGain: FOV_SPEED_GAIN,
+    fovBoost: 6.0, fovDrift: 2.2, fovRate: 4.6, dof: 0.18,
     upBlend: 0.95, collide: false, collideRadius: 0.06, minDistance: 0,
     floorClearance: 0.03,
     rigid: true, flip: false, shakeScale: 1.35, speedFx: 1.15,
@@ -167,8 +203,8 @@ export const CHASE_PRESETS = Object.freeze({
     speedDistance: 0.16, speedHeight: 0.02, airDistance: 0.10, airHeight: 0.08,
     airLookLead: 0.04, pitchFromAir: 0.06,
     rollGain: 0.010, rollMax: 0.030, rollOmega: 5.0,
-    fovBase: CONFIG.render.fovBase + 6, fovGain: CONFIG.render.fovSpeedGain * 0.5,
-    fovBoost: 2.0, fovDrift: 0, fovRate: 5.0,
+    fovBase: FOV_BASE + 6, fovGain: FOV_SPEED_GAIN * 0.5,
+    fovBoost: 2.0, fovDrift: 0, fovRate: 5.0, dof: 0.25,
     upBlend: 0.20, collide: true, collideRadius: 0.09, minDistance: 0.18,
     floorClearance: 0.07,
     rigid: false, flip: true, shakeScale: 0.9, speedFx: 0.8,
@@ -320,6 +356,9 @@ export class ChaseCamera {
       out.lookAt(this.pos.value, this.look.value, WORLD_UP, this.roll.value);
       out.fov = this.fov.update(p.fovBase, dt, p.fovRate, 1);
       out.shakeScale = p.shakeScale;
+      // No car ⇒ no subject for autofocus to lock onto. DOF off, not stale.
+      out.dofIntensity = 0;
+      out.focusDistance = 0;
       out.speedIntensity = 0;
       return out;
     }
@@ -437,7 +476,7 @@ export class ChaseCamera {
     this.roll.update(rollTarget, dt, p.rollOmega, 1.0);
 
     // ── 10. FOV ─────────────────────────────────────────────────────────────
-    // The contract is literally CONFIG.render.fovBase + fovSpeedGain·speedFrac;
+    // The contract is literally fovBase + fovGain·speedFrac (see FOV_BASE);
     // boost/drift/air ride on top, and the sum is capped so the lens cannot go
     // full fish-eye when they all land at once.
     const fovTarget = Math.min(
@@ -453,10 +492,27 @@ export class ChaseCamera {
     out.lookAt(_tmp2, this.look.value, _up, this.roll.value);
     out.fov = clamp(this.fov.value, 20, 120);
     out.shakeScale = p.shakeScale;
-    out.dofIntensity = 0;
-    out.focusDistance = 0;
+    this._applyDof(out);
     out.speedIntensity = clamp01(
       (cs.speedFrac * 0.82 + cs.driftFactor * 0.18 + cs.boost * 0.25) * p.speedFx);
+    return out;
+  }
+
+  /**
+   * Write the tilt-shift block. `focusDistance = 0` hands the focal plane to
+   * PostFX's autofocus, which damps onto the player car — the one subject that
+   * must never be soft. Every field is written unconditionally because the pose
+   * objects are reused across rigs: leaving `focusRange` behind would inherit
+   * whichever cinematic rig ran last, and those are authored at 0.3 m.
+   * @param {CameraPose} out
+   */
+  _applyDof(out) {
+    out.dofIntensity = this.preset.dof ?? 0;
+    out.focusDistance = 0;
+    out.focusRange = CHASE_DOF.range;
+    out.nearFalloff = CHASE_DOF.near;
+    out.farFalloff = CHASE_DOF.far;
+    out.maxBlur = CHASE_DOF.maxBlur;
     return out;
   }
 
@@ -579,6 +635,8 @@ export class ChaseCamera {
       out.position.set(0, p.height + 0.8, p.distance + 1.6);
       out.lookAt(out.position, ZERO_V, WORLD_UP, 0);
       out.fov = p.fovBase;
+      out.dofIntensity = 0;
+      out.focusDistance = 0;
       return out;
     }
     const base = yawOf(cs.forward.x, cs.forward.z);
@@ -592,8 +650,7 @@ export class ChaseCamera {
     out.lookAt(_anchor, _look, _up, 0);
     out.fov = p.fovBase + p.fovGain * cs.speedFrac;
     out.shakeScale = p.shakeScale;
-    out.dofIntensity = 0;
-    out.focusDistance = 0;
+    this._applyDof(out);
     out.speedIntensity = cs.speedFrac;
     return out;
   }

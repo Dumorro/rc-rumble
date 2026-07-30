@@ -1038,9 +1038,17 @@ export class ParticleSystem {
 
     const sun = lighting?.sun;
     if (sun) {
-      _v3a.copy(sun.position);
-      const tgt = lighting.sunTarget?.position;
-      if (tgt) _v3a.sub(tgt);
+      // `lightDirection` is the published contract (direction light TRAVELS, so
+      // negate for "toward the sun"). `sun.position` is only a fallback: under
+      // CSM the sun object is a parked, invisible placeholder.
+      const lit = lighting.lightDirection;
+      if (lit && lit.lengthSq() > 1e-8) {
+        _v3a.copy(lit).negate();
+      } else {
+        _v3a.copy(sun.position);
+        const tgt = lighting.sunTarget?.position;
+        if (tgt) _v3a.sub(tgt);
+      }
       if (_v3a.lengthSq() < 1e-8) _v3a.set(0.4, 1, 0.3);
       _v3a.normalize();
       _v3b.copy(_v3a).applyMatrix3(_mat3).normalize();

@@ -29,10 +29,9 @@
  */
 
 import * as THREE from 'three';
-import CONFIG from '../core/Config.js';
 import { clamp, clamp01, lerp, smootherstep, smoothstep, TAU } from '../core/MathUtils.js';
 import { createRayHit, Layer } from '../physics/index.js';
-import { CameraPose, WORLD_UP, framingUp } from './CameraPose.js';
+import { CameraPose, WORLD_UP, framingUp, FOV_BASE } from './CameraPose.js';
 import { Spring, Vec3Spring, lagCoefficient, addLagCompensation } from './Spring.js';
 
 const _v = new THREE.Vector3();
@@ -49,7 +48,7 @@ const CAST_MASK = Layer.TRACK | Layer.PROP | Layer.DEFAULT;
 export const INTRO_SHOTS = Object.freeze([
   { key: 'crane', duration: 3.1, fovFrom: 30, fovTo: 40 },
   { key: 'dolly', duration: 2.7, fovFrom: 48, fovTo: 38 },
-  { key: 'settle', duration: 2.4, fovFrom: 34, fovTo: CONFIG.render.fovBase },
+  { key: 'settle', duration: 2.4, fovFrom: 34, fovTo: FOV_BASE },
 ]);
 
 export class CinematicCamera {
@@ -88,7 +87,7 @@ export class CinematicCamera {
 
     this.pos = new Vec3Spring(6.5, 1);
     this.look = new Vec3Spring(7.5, 1);
-    this.fov = new Spring(CONFIG.render.fovBase, 3.2, 1);
+    this.fov = new Spring(FOV_BASE, 3.2, 1);
     this._focus = new Spring(3, 2.4, 1);
   }
 
@@ -301,7 +300,7 @@ export class CinematicCamera {
       if (chase && ctx?.carState?.valid) chase.sampleIdeal(ctx, _ideal);
       else {
         _ideal.position.copy(this._swoopStart ?? _eye);
-        _ideal.fov = CONFIG.render.fovBase;
+        _ideal.fov = FOV_BASE;
       }
       const e = smootherstep(local);
       _eye.lerpVectors(this._swoopStart ?? _ideal.position, _ideal.position, e);
@@ -396,7 +395,7 @@ export class CinematicCamera {
     _v2.y -= 0.10;
     this.pos.snap(_v2);
     this.look.snap(cs.position);
-    this.fov.snap(fromPose ? fromPose.fov : CONFIG.render.fovBase);
+    this.fov.snap(fromPose ? fromPose.fov : FOV_BASE);
     this._focus.snap(Math.max(_v2.distanceTo(cs.position), 0.3));
   }
 
@@ -425,7 +424,7 @@ export class CinematicCamera {
     addLagCompensation(_look, cs.velocity, kl, kl * 0.8, 2.4);
     this.look.update(_look, dt, 9, 1);
 
-    this.fov.update(CONFIG.render.fovBase + 14, dt, 3.4, 1);
+    this.fov.update(FOV_BASE + 14, dt, 3.4, 1);
     const dist = Math.max(this.pos.value.distanceTo(this.look.value), 0.25);
     this._focus.update(dist, dt, 4, 1);
 

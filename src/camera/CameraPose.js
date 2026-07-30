@@ -8,7 +8,6 @@
  */
 
 import * as THREE from 'three';
-import CONFIG from '../core/Config.js';
 import { clamp, clamp01, smootherstep, smoothstep } from '../core/MathUtils.js';
 
 const _m4 = new THREE.Matrix4();
@@ -20,13 +19,40 @@ const _zAxis = new THREE.Vector3(0, 0, 1);
 
 export const WORLD_UP = Object.freeze(new THREE.Vector3(0, 1, 0));
 
+/**
+ * The vertical FOV, in degrees, that every rig in this directory is authored
+ * around — and the single most important number in the whole camera system for
+ * making a 30 cm car read as a 30 cm car.
+ *
+ * `CONFIG.render.fovBase` ships at 62°. At 16:9 that is
+ * `2·atan(tan(31°)·16/9) = 93.8°` HORIZONTAL, and 118° once `fovSpeedGain: 16`
+ * lands on top of it under boost. A very wide lens on a very low camera
+ * exaggerates depth exactly the way standing next to a real car does — it is
+ * the reason the shipped frame read as a full-size rally car in a normal room
+ * rather than a toy in an oversized one. Re-Volt itself runs a fixed, much
+ * narrower lens (~53° horizontal), and never opens it with speed.
+ *
+ * 46° vertical = 74° horizontal at 16:9; the speed gain adds 10 more, not 16.
+ *
+ * CONFIG is still honoured, just as a *zero point* rather than as the framing:
+ * `src/ui/Settings.js` applies the FOV slider as a delta from
+ * `CONFIG.render.fovBase` onto each preset's authored `fovBase`, so the default
+ * slider position is a no-op either way. Setting `CONFIG.render.fovBase = 46`
+ * and `fovSpeedGain = 10` makes the two agree; leaving them at 62/16 only
+ * offsets where the slider's centre detent sits.
+ */
+export const FOV_BASE = 46;
+
+/** Extra vertical degrees at top speed. See {@link FOV_BASE}. */
+export const FOV_SPEED_GAIN = 10;
+
 export class CameraPose {
   constructor() {
     this.position = new THREE.Vector3(0, 1.2, 2.4);
     this.quaternion = new THREE.Quaternion();
 
     /** Vertical field of view in degrees. */
-    this.fov = CONFIG.render.fovBase;
+    this.fov = FOV_BASE;
     /** Informational: the roll already baked into `quaternion`, radians. */
     this.roll = 0;
 

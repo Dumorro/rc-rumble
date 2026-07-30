@@ -14,7 +14,6 @@
  */
 
 import * as THREE from 'three';
-import CONFIG from '../core/Config.js';
 import { clamp, TAU } from '../core/MathUtils.js';
 import { WORLD_UP } from './CameraPose.js';
 import { Spring, Vec3Spring, lagCoefficient, addLagCompensation } from './Spring.js';
@@ -31,7 +30,12 @@ export const ORBIT_PRESETS = Object.freeze({
     heightScale: 0.30, minHeight: 0.9,
     speed: 0.085,             // rad/s
     bob: 0.10, bobRate: 0.19,
-    fov: CONFIG.render.fovBase - 12,
+    // NOT derived from FOV_BASE, deliberately. `_radiusTarget` is
+    // `extent * radiusScale` with no lens compensation, so narrowing this from
+    // the 50° it shipped at would crop the menu backdrop by ~50% on a 40 m
+    // track: at 26 m out, 50° vertical is 78° horizontal and only just contains
+    // it. Retune `radiusScale` in the same change if you ever move this.
+    fov: 50,
     fovBreathe: 2.4, fovRate: 0.11,
     dof: 0.85, focusRange: 0.55, maxBlur: 0.026,
     lookLift: 0.06,

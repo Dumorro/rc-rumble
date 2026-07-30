@@ -6,6 +6,10 @@
  *   2. Lints the source tree for the project's hard rules.
  *   3. Checks that every field in the ARCHITECTURE.md data contracts is
  *      actually WIRED UP — see `runContractCheck`.
+ *   4. Builds every registered track headlessly and proves it can be LAPPED —
+ *      see `tools/drivability.mjs`. The Back Garden shipped with its start
+ *      straight sealed inside an unbroken house wall and half its grid floating
+ *      over a jump gap; steps 1-3 were all green while that was true.
  *
  * Suites run one at a time on purpose: the physics suite has load-sensitive
  * timing assertions (e.g. "a suspension raycast costs under 5 us") that flake
@@ -496,6 +500,26 @@ function runContractCheck(files) {
   return bad.length + unjustified.length;
 }
 
+// ───────────────────────────────────────────── 4. drivability
+
+/**
+ * Build every registered track and prove a car can get round it. Lives in its
+ * own module because it is the only part of this file that imports `three` and
+ * the game's own source — keep the import lazy so a broken src/ tree still gets
+ * you a suite report and a lint instead of a stack trace at startup.
+ */
+async function runDrivability() {
+  try {
+    const { runDrivabilityCheck } = await import('./drivability.mjs');
+    return runDrivabilityCheck(C);
+  } catch (err) {
+    console.log(C.bold('\n\u25b8 Drivability\n'));
+    console.log(`  ${C.red('\u2717')} the drivability gate itself failed to run: ${err?.message ?? err}`);
+    console.log(C.dim(`      ${(err?.stack ?? '').split('\n').slice(1, 5).join('\n      ')}`));
+    return 1;
+  }
+}
+
 // ─────────────────────────────────────────────────────────── run
 
 console.log(C.bold('\nRC RUMBLE — repo check'));
@@ -504,8 +528,9 @@ console.log(C.dim(`${ALL_FILES.length} source files under src/`));
 const suites = runSuites();
 const violations = runLint();
 const contractGaps = runContractCheck(ALL_FILES);
+const undrivable = await runDrivability();
 
-const ok = suites.failed === 0 && violations === 0 && contractGaps === 0;
+const ok = suites.failed === 0 && violations === 0 && contractGaps === 0 && undrivable === 0;
 
 console.log(C.bold('\n▸ Summary\n'));
 // A suite that dies without printing a tally (or exits non-zero) contributes 0 to
@@ -522,6 +547,7 @@ if (suites.flaky) {
   console.log(`  perf        ${C.yellow(`${suites.flaky} timing assertion(s) warned, not gating`)}`);
 }
 console.log(`  lint        ${violations} violation${violations === 1 ? '' : 's'}`);
+console.log(`  drivable    ${undrivable} track${undrivable === 1 ? '' : 's'} that cannot be lapped`);
 console.log(ok ? C.green('\n  PASS\n') : C.red('\n  FAIL\n'));
 
 process.exit(ok ? 0 : 1);

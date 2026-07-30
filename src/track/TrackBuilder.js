@@ -990,6 +990,10 @@ export class TrackBuilder {
    * @param {number[]} o.from `[x, y, z]` bottom @param {number[]} o.to `[x, y, z]` top
    * @param {number} [o.width=2.4]
    * @param {number} [o.thickness=0.09]
+   * @param {number} [o.lead] length of the ground→foot taper
+   * @param {number} [o.groundY=from.y] ground height at the foot. Only when this
+   *        is BELOW `from.y` is a lead-in wedge built — otherwise the slab's top
+   *        surface already meets the ground and a wedge would be a hump.
    * @param {object|false} [o.rails] `{ height, material }`
    */
   ramp(o = {}) {
@@ -1018,15 +1022,27 @@ export class TrackBuilder {
     this.add(slab, mat, { matrix: _m, surfaceId: sid, cast: true, receive: true });
     slab.dispose();
 
-    // Lead-in: a shallow wedge so the transition is smooth even at speed.
+    // Lead-in: a shallow wedge from the ground up to the ramp's foot.
+    //
+    // The slab is positioned so its TOP SURFACE contains A→B (that is what the
+    // `th/2/cos(pitch)` drop above buys), so when the foot sits on the ground
+    // there is no step to cover and no lead-in is needed. `lead` therefore only
+    // does anything when the caller says the ground is lower than `from.y`.
+    //
+    // It used to build the wedge unconditionally, at `th·cos(pitch)` tall with
+    // its TALL end at A — i.e. a hump on top of the ramp's foot, then a drop of
+    // one slab thickness onto the ramp itself, plus a `th·cos(pitch)` kerb down
+    // each side of it. Measured on both shipped ramps: 5.6 cm on the garden's
+    // leaning plank and 9.9 cm on the museum's table ramp, both across the
+    // racing line, on a car whose wheels are 3.3 cm in radius. The drivability
+    // gate in tools/check.mjs flags the side faces of exactly that wedge.
     const leadLen = o.lead ?? Math.min(0.7, len * 0.3);
-    if (leadLen > 0.02) {
-      const lipH = Math.max(0.004, th * Math.cos(pitch));
-      const lead = G.wedge(w, lipH + rise * (leadLen / Math.max(len, 1e-3)) * 0, leadLen);
-      _v.set(0, 0, 0);
-      // Place it just before A, climbing to the ramp's leading edge.
+    const climb = A.y - (o.groundY ?? A.y);
+    if (leadLen > 0.02 && climb > 0.004) {
+      const lead = G.wedge(w, climb, leadLen);
+      // Place it just before A, climbing from the ground to the ramp's foot.
       const dirX = Math.sin(yaw), dirZ = Math.cos(yaw);
-      _v2.set(A.x - dirX * leadLen * 0.5, A.y, A.z - dirZ * leadLen * 0.5);
+      _v2.set(A.x - dirX * leadLen * 0.5, A.y - climb, A.z - dirZ * leadLen * 0.5);
       _e.set(0, yaw, 0, 'YXZ');
       _q.setFromEuler(_e);
       _m.compose(_v2, _q, _s.set(1, 1, 1));
@@ -1618,6 +1634,15 @@ export class TrackBuilder {
 
   /**
    * A staggered start grid behind the finish line. ≥ 8 slots by contract.
+   *
+   * Slots are pushed FURTHER BACK past any declared jump gap. `respawns()` has
+   * always nudged forward out of a gap; this did not, and the garden's grid ran
+   * straight off the back of the deck: slots 4–7 sat 0.40 / 0.69 / 0.84 / 0.94 m
+   * above nothing, over the deck jump, so half the field fell out of the world
+   * on the countdown. The nudge has to go backwards, not forwards, or a grid
+   * slot ends up AHEAD of the line it is supposed to start behind — and the
+   * whole grid shifts by the same amount so the stagger is preserved.
+   *
    * @param {{count?:number, rowGap?:number, columns?:number, spread?:number,
    *          firstBack?:number, lift?:number, finishT?:number}} [o]
    */
@@ -1631,10 +1656,16 @@ export class TrackBuilder {
     const finishT = o.finishT ?? 0;
     const len = this.spline.length;
     const list = [];
+    let extraBack = 0;
     for (let i = 0; i < count; i++) {
       const row = Math.floor(i / columns);
       const col = i % columns;
-      const back = firstBack + row * rowGap + col * stagger;
+      const nominal = firstBack + row * rowGap + col * stagger;
+      let back = nominal + extraBack;
+      // Walk the whole grid back until this slot is clear of every jump gap.
+      let guard = 0;
+      while (this.isGap(this.spline.wrapT(finishT - back / len)) && guard++ < 200) back += 0.5;
+      extraBack = Math.max(extraBack, back - nominal);
       const t = this.spline.wrapT(finishT - back / len);
       this.spline.sample(t, _smp);
       const spread = o.spread ?? Math.min(0.34, _smp.width * 0.16);

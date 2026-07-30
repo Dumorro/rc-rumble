@@ -70,31 +70,41 @@ const NODES = [
   [40, 0, -28, 2.6],      // 15
   [43, 0, -21, 2.8],      // 16 ← east wall, heading +Z
   [43, 0, -11, 2.8],      // 17 ← ramp up begins
-  [43, 0.70, -1, 3.0],    // 18 ← on the display table
-  [43, 0.70, 9, 3.0],     // 19
-  [42, 0.70, 18, 2.8],    // 20
-  [37, 0.70, 23, 2.8],    // 21
-  [33, 0.70, 24.5, 3.0],  // 22 ← top of the marble stairs
-  [30.2, 0, 24.5, 3.0],   // 23 ← bottom
+  // The ramp tops out at the table's south edge (z = TABLE.z0 = -6.5); the
+  // centreline used to reach deck height only at z = -1, so for 5.5 m it ran
+  // 0.34 m UNDER the ramp it is supposed to describe. Everything derived from
+  // the spline — AI path, checkpoint heights, respawns, the chase camera — was
+  // inside the woodwork there.
+  [43, 0.70, -6.5, 3.0],  // 18 ← top of the ramp, at the table edge
+  [43, 0.70, -1, 3.0],    // 19 ← on the display table
+  [43, 0.70, 9, 3.0],     // 20
+  [42, 0.70, 18, 2.8],    // 21
+  [37, 0.70, 23, 2.8],    // 22
+  [33, 0.70, 24.5, 3.0],  // 23 ← top of the marble stairs
+  // The landing is 1.1 m clear of the staircase's west toe, and the turn south
+  // starts from there. It used to land at x = 30.2 and turn immediately, which
+  // walked the racing corridor straight across the stairs' 0.14 m side skirt at
+  // z = 22.8 — a kerb across the exit of a jump you take at 8 m/s.
+  [29.4, 0, 24.6, 3.0],   // 24 ← bottom
   // ── a full anticlockwise lap of the Rocket Hall around the plinth ──
-  [31, 0, 18.5, 2.8],     // 24
-  [30, 0, 11, 2.8],       // 25
-  [27, 0, 5.5, 2.6],      // 26
-  [20, 0, 5.2, 2.6],      // 27
-  [13, 0, 7.5, 2.6],      // 28
-  [9, 0, 13, 2.6],        // 29
-  [10, 0, 20, 2.6],       // 30
-  [10, 0, 26, 2.6],       // 31 ← service-corridor entrance (curtain, to the south)
+  [30.0, 0, 18.5, 2.8],   // 25
+  [30, 0, 11, 2.8],       // 26
+  [27, 0, 5.5, 2.6],      // 27
+  [20, 0, 5.2, 2.6],      // 28
+  [13, 0, 7.5, 2.6],      // 29
+  [9, 0, 13, 2.6],        // 30
+  [10, 0, 20, 2.6],       // 31
+  [10, 0, 26, 2.6],       // 32 ← service-corridor entrance (curtain, to the south)
   // ── deep through the Grand Hall and back to the hairpin ──
-  [2, 0, 20, 2.6],        // 32
-  [-5, 0, 13, 2.6],       // 33
-  [-11, 0, 4, 2.6],       // 34
-  [-20, 0, 0, 2.6],       // 35
-  [-29, 0, 3, 2.6],       // 36
-  [-33.5, 0, 11, 2.8],    // 37
-  [-35, 0, 20, 3.2],      // 38
-  [-42, 0, 29, 4.4],      // 39 ← hairpin
-  [-42.5, 0, 22, 3.6],    // 40
+  [2, 0, 20, 2.6],        // 33
+  [-5, 0, 13, 2.6],       // 34
+  [-11, 0, 4, 2.6],       // 35
+  [-20, 0, 0, 2.6],       // 36
+  [-29, 0, 3, 2.6],       // 37
+  [-33.5, 0, 11, 2.8],    // 38
+  [-35, 0, 20, 3.2],      // 39
+  [-42, 0, 29, 4.4],      // 40 ← hairpin
+  [-42.5, 0, 22, 3.6],    // 41
 ];
 
 export default {
@@ -263,7 +273,7 @@ function buildRoad(b) {
   const L = b.spline.length;
   // The marble staircase replaces the road between nodes 22 and 23.
   const stairFrom = b.tNear([33, 0.70, 24.5]);
-  const stairTo = b.tNear([30.2, 0, 24.5]);
+  const stairTo = b.tNear([29.4, 0, 24.6]);
   b.jumpGap(stairFrom, stairTo, { lip: false });
 
   // The racing surface *is* the museum floor — no tarmac here. The route is
@@ -430,7 +440,7 @@ function buildStairs(b) {
   // Five monumental steps off the west edge of the table platform.
   b.stairs({
     from: [33.0, TABLE.y, 24.5],
-    to: [30.0, 0, 24.5],
+    to: [30.5, 0, 24.5],
     steps: 5, width: 3.4, skirt: 0.22, nosing: 0.014,
     material: 'tile/ceramic_glazed', matOpts: { color: 0xe4e0d4 },
     surfaceId: SurfaceId.TILE,
@@ -443,14 +453,14 @@ function buildStairs(b) {
   const marble = b.mat('concrete/screed', { color: 0xe8e3d6 });
   for (const s of [-1, 1]) {
     for (let i = 0; i <= 5; i++) {
-      const x = 33.0 - (3.0 / 5) * i;
+      const x = 33.0 - (2.5 / 5) * i;
       const y = TABLE.y - (TABLE.y / 5) * i;
       b.instanceAt('stair:baluster', postGeo, marble,
         [x, y, 24.5 + s * 1.85], null, 1, { collide: 'box', surfaceId: SurfaceId.CONCRETE });
     }
     const railPts = [
       new THREE.Vector3(33.3, TABLE.y + 0.36, 24.5 + s * 1.85),
-      new THREE.Vector3(29.8, 0.34, 24.5 + s * 1.85),
+      new THREE.Vector3(30.3, 0.34, 24.5 + s * 1.85),
     ];
     const rail = G.beamBetween(railPts[0], railPts[1], 0.07, 0.05, { radius: 0.02 });
     b.add(rail, marble, { surfaceId: SurfaceId.CONCRETE, cast: true, receive: true });
@@ -599,11 +609,14 @@ function buildDinoHall(b) {
   b.prop('stanchion', { position: [D.x - 2.2, 0, -15.2], instanced: true });
   ropeBetween(b, [D.x - 4.2, 0.47, -14.0], [D.x - 2.2, 0.47, -15.2]);
 
-  // Fossil cases along the north wall.
+  // Fossil cases along the north wall. Pushed back to 1.2 m off the wall: at
+  // 2.4 m the last one (x = 37) straddled the racing line between nodes 14 and
+  // 15, and its 0.55 m plinth is solid — a wall across the line, 130 m into the
+  // lap, plus a respawn point buried in it.
   for (let i = 0; i < 6; i++) {
     const x = -1 + i * 7.6;
     b.prop('display_case', {
-      position: [x, 0, HALL.z0 + 2.4], rotation: [0, 0, 0],
+      position: [x, 0, HALL.z0 + 1.2], rotation: [0, 0, 0],
       width: 2.0, depth: 1.2, plinthHeight: 0.55, glassHeight: 0.8,
       plinthColor: 0x54402a,
     });
@@ -748,8 +761,10 @@ function buildRocketHall(b) {
     surfaceId: null, collide: false, decor: true,
   });
 
-  // Columns.
-  for (const [x, z] of [[8, 26], [38, 24], [38, 8]]) {
+  // Columns. The first one used to stand at [8, 26], 1.5 m from the centreline
+  // on the outside of the corridor-entrance corner — a 9.6 m marble column with
+  // a 0.52 m plinth, inside the racing corridor.
+  for (const [x, z] of [[6.6, 27.2], [38, 24], [38, 8]]) {
     b.prop('column', { position: [x, 0, z], height: 9.6, radius: 0.42, color: 0xeae3d2, instanced: true });
   }
 }

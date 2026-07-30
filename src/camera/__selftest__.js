@@ -10,8 +10,11 @@
  *   • boots with no track and no car (menu orbit fallback)
  *   • the chase camera ends up BEHIND the car, at a sane distance, at speed
  *   • velocity feed-forward: distance must not grow with speed
+ *   • the lens is scale-correct: HORIZONTAL fov stays out of GoPro territory
+ *   • the chase tilt-shift is published, is scene-scale, and never blurs the car
  *   • mode cycling, hold-to-look-back push/pop, respawn, car loss
  *   • trauma decay, directional impulse, collision/land/weapon shake
+ *   • shake never displaces the camera THROUGH geometry
  *   • big-air cut fires and returns; crash cut fires ONCE then respects cooldown
  *   • the intro flyby runs three shots and hands over exactly on the chase pose
  *   • finish cam orbit radius, and that it tracks a winner still rolling at 6 m/s
@@ -35,6 +38,7 @@ if (typeof window === 'undefined') {
 
 const THREE = await import('three');
 const { CameraDirector } = await import('./CameraDirector.js');
+const { CHASE_PRESETS } = await import('./ChaseCamera.js');
 const { EventBus } = await import('../core/EventBus.js');
 const { GameState } = await import('../core/Game.js');
 const { InputState } = await import('../core/Input.js');
@@ -42,6 +46,19 @@ const { InputState } = await import('../core/Input.js');
 let fails = 0;
 const ok = (cond, msg) => { if (!cond) { fails++; console.error('FAIL:', msg); } };
 const finite = (v, msg) => ok(Number.isFinite(v), `${msg} (got ${v})`);
+
+/** Vertical fov (deg) → horizontal fov (deg). The number a player actually sees. */
+const hfov = (vDeg, aspect = 16 / 9) =>
+  (2 * Math.atan(Math.tan((vDeg * Math.PI) / 360) * aspect) * 180) / Math.PI;
+
+/** DofShader.cocFor(), verbatim — so the test asserts what the GPU will do. */
+const cocFor = (z, d) => {
+  const delta = z - d.focusDistance;
+  const a = Math.abs(delta) - d.focusRange;
+  if (a <= 0) return 0;
+  const falloff = delta < 0 ? d.nearFalloff : d.farFalloff;
+  return Math.min(Math.max(a / Math.max(falloff, 0.001), 0), 1);
+};
 
 // ── fakes ───────────────────────────────────────────────────────────────────
 function makeCar(id = 0) {
@@ -69,7 +86,7 @@ const physics = {
   sphereCast() { return false; },
   raycastTrack() { return false; },
 };
-const postfxLog = { speed: 0, dof: 0, resets: 0 };
+const postfxLog = { speed: 0, dof: 0, resets: 0, dofOpts: null };
 const game = {
   bus, camera, physics,
   scene: new THREE.Scene(),
@@ -80,7 +97,10 @@ const game = {
   renderer: {
     postfx: {
       setSpeedIntensity(v) { postfxLog.speed = v; },
-      setDof(o) { postfxLog.dof = o.enabled ? (o.intensity ?? 1) : 0; },
+      setDof(o) {
+        postfxLog.dof = o.enabled ? (o.intensity ?? 1) : 0;
+        postfxLog.dofOpts = o.enabled ? { ...o } : null;
+      },
       resetHistory() { postfxLog.resets++; },
     },
     pulseSlowMo() {},
@@ -139,9 +159,52 @@ for (let i = 0; i < 240; i++) {
 ok(camera.position.z > car.body.position.z, 'chase camera must be BEHIND the car (larger z)');
 const back = camera.position.distanceTo(car.body.position);
 ok(back > 0.5 && back < 2.2, `chase distance sane, got ${back.toFixed(3)}`);
-ok(camera.fov > 62 && camera.fov < 82, `speed fov should have opened, got ${camera.fov.toFixed(2)}`);
+const CP = CHASE_PRESETS.chase;
+ok(camera.fov > CP.fovBase && camera.fov < CP.fovBase + CP.fovGain + 8,
+  `speed fov should have opened above the base, got ${camera.fov.toFixed(2)} (base ${CP.fovBase})`);
 ok(postfxLog.speed > 0.2, `speed intensity published, got ${postfxLog.speed.toFixed(3)}`);
 ok(dir.getSpeedIntensity() > 0.2, 'getSpeedIntensity');
+
+// ── 2b. the lens is authored for 1:10, not for a real car ───────────────────
+// Vertical fov is the knob, but HORIZONTAL fov is what the player experiences,
+// and a wide lens on a low camera is the strongest "this is a full-size vehicle"
+// cue a renderer has. The shipped 62°/+16° pair was 93.8° at rest and 118° under
+// boost — a GoPro on a rally car. Re-Volt runs a fixed ~53° horizontal.
+console.log('lens        rest %s° h · top speed %s° h · peak %s° h  (vertical %s/%s/%s)',
+  hfov(CP.fovBase).toFixed(1), hfov(CP.fovBase + CP.fovGain).toFixed(1),
+  hfov(CP.fovBase + CP.fovGain + 8).toFixed(1),
+  CP.fovBase.toFixed(0), (CP.fovBase + CP.fovGain).toFixed(0),
+  (CP.fovBase + CP.fovGain + 8).toFixed(0));
+ok(hfov(CP.fovBase) < 80,
+  `resting chase lens must not be a GoPro, got ${hfov(CP.fovBase).toFixed(1)}° horizontal`);
+ok(hfov(CP.fovBase + CP.fovGain) < 90,
+  `top-speed chase lens too wide, got ${hfov(CP.fovBase + CP.fovGain).toFixed(1)}° horizontal`);
+ok(CP.fovGain <= 12, `speed fov gain too aggressive for RC scale, got ${CP.fovGain}`);
+
+// ── 2c. chase tilt-shift: published, scene-scale, and never on the subject ──
+ok(postfxLog.dof > 0.15 && postfxLog.dof < 0.6,
+  `chase must publish a SUBTLE dof intensity, got ${postfxLog.dof}`);
+const D = postfxLog.dofOpts;
+ok(!!D && D.autoFocus === true, 'chase dof hands the focal plane to autofocus');
+// The failure this guards: the intro shipped a 0.45 m sharp band on a shot that
+// framed 10 m, so the subject itself sat at 85% blur. At RC scale the temptation
+// to author DOF in car-lengths is constant and always wrong.
+ok(D.focusRange >= 5 && D.focusRange <= 9,
+  `chase sharp band should be ~14 m wide (range ±7), got ±${D?.focusRange}`);
+ok(D.nearFalloff >= 6 && D.farFalloff >= 12,
+  `chase dof falloffs must be scene-scale, got near ${D?.nearFalloff} far ${D?.farFalloff}`);
+{
+  // Emulate PostFX's autofocus (it damps onto the camera→player-car distance).
+  const carDist = camera.position.distanceTo(car.body.position);
+  const d = { ...D, focusDistance: carDist };
+  const cocCar = cocFor(carDist, d);
+  const cocFar = cocFor(30, d);
+  console.log('tilt-shift  intensity %s · car at %s m coc=%s · 30 m coc=%s',
+    postfxLog.dof.toFixed(2), carDist.toFixed(2), cocCar.toFixed(3), cocFar.toFixed(3));
+  ok(cocCar === 0, `the player car must be perfectly sharp, coc=${cocCar.toFixed(3)}`);
+  ok(cocFor(8, d) === 0, 'the track 8 m ahead must still be sharp');
+  ok(cocFar > 0.3, `the far background must actually soften, coc=${cocFar.toFixed(3)}`);
+}
 
 // ── 3. mode cycling + look back ─────────────────────────────────────────────
 const seen = new Set();
@@ -192,6 +255,56 @@ dir.shake(0.5, 0.3);
 dir.impulse(new THREE.Vector3(1, 0, 0), 2);
 for (let i = 0; i < 120; i++) dir.lateUpdate(1 / 60, 0, 1 / 60);
 finite(camera.position.x, 'camera x after impulse');
+
+// ── 4b. shake must not shove the camera through a wall ──────────────────────
+// CameraShake adds up to maxOffset (0.052) + impulseMax (0.14) = 0.19 m of
+// POSITIONAL displacement, and it does it AFTER ChaseCamera._avoid() has already
+// resolved the boom against geometry. At 1:10 that is two thirds of a car
+// length, applied hardest at exactly the moment the camera is pinned to a wall.
+const shakeWall = { on: false, dist: 0.05 };
+const wallPhysics = {
+  trackMesh: {},
+  // Only the SHORT cast is the shake clamp: _avoid() sweeps the whole boom
+  // (~1 m) and _floor() rays 0.9 m, while the shake offset is ≤ 0.19 m. Gating
+  // on `max` keeps this fake from also jamming the chase rig onto the car.
+  sphereCast(o, d, r, max, out) {
+    if (!shakeWall.on || max > 0.5 || shakeWall.dist >= max) return false;
+    out.hit = true;
+    out.distance = shakeWall.dist;
+    out.point.copy(o).addScaledVector(d, shakeWall.dist);
+    out.normal.copy(d).negate();
+    out.surfaceId = 1; out.triIndex = 0; out.body = null;
+    return true;
+  },
+  raycastTrack() { return false; },
+};
+
+function measureShakeOffset(frames = 30) {
+  let peak = 0;
+  dir.shaker.reset();
+  dir.shake(1.0, 0.6);
+  dir.impulse(new THREE.Vector3(1, 0.2, 0.4), 6);
+  for (let i = 0; i < frames; i++) {
+    dir.lateUpdate(1 / 60, 0, 1 / 60);
+    peak = Math.max(peak, dir.finalPose.position.distanceTo(dir.pose.position));
+  }
+  return peak;
+}
+
+game.physics = wallPhysics;
+shakeWall.on = false;
+const freeShake = measureShakeOffset();
+shakeWall.on = true;
+const walledShake = measureShakeOffset();
+console.log('shake       free peak %s m · with a wall 0.05 m away %s m',
+  freeShake.toFixed(4), walledShake.toFixed(4));
+ok(freeShake > 0.03, `shake must actually move the camera, peak ${freeShake.toFixed(4)} m`);
+ok(walledShake <= shakeWall.dist + 1e-6,
+  `shake punched ${walledShake.toFixed(4)} m through a wall ${shakeWall.dist} m away`);
+shakeWall.on = false;
+game.physics = physics;
+dir.shaker.reset();
+for (let i = 0; i < 120; i++) dir.lateUpdate(1 / 60, 0, 1 / 60);
 
 // ── 5. big air ──────────────────────────────────────────────────────────────
 car.airborne = true;

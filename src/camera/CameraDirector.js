@@ -18,8 +18,9 @@
  * ## Per frame
  *
  *   sample the car → run director logic (fallbacks, big air, finish) → read input
- *   → activate any pending mode → update rig(s) → blend → shake → commit to the
- *   camera → publish speed intensity + DOF to the render system.
+ *   → activate any pending mode → update rig(s) → blend → shake → re-resolve the
+ *   shake offset against geometry → commit to the camera → publish speed
+ *   intensity + DOF to the render system.
  *
  * ## Guarantees
  *
@@ -49,7 +50,8 @@ import * as THREE from 'three';
 import CONFIG from '../core/Config.js';
 import { GameState } from '../core/Game.js';
 import { clamp, clamp01, damp } from '../core/MathUtils.js';
-import { CameraPose, blendPose } from './CameraPose.js';
+import { createRayHit, Layer } from '../physics/index.js';
+import { CameraPose, blendPose, FOV_BASE } from './CameraPose.js';
 import { CarState } from './CarState.js';
 import { CameraShake } from './CameraShake.js';
 import { ChaseCamera, CHASE_PRESETS } from './ChaseCamera.js';
@@ -60,6 +62,12 @@ import { FreeCamera } from './FreeCamera.js';
 
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
+const _shakeHit = createRayHit();
+
+/** Sweep radius for the post-shake clearance cast, metres. */
+const SHAKE_RADIUS = 0.05;
+/** Statics + props only — a rival car must not clamp the shake. */
+const SHAKE_MASK = Layer.TRACK | Layer.PROP | Layer.DEFAULT;
 
 /** Every mode the director understands. */
 export const CAMERA_MODES = Object.freeze([
@@ -188,6 +196,11 @@ export class CameraDirector {
     this._fallVy = 0;
     this._lastLandEvent = -100;
     this._dofOwned = false;
+    /** Scratch for PostFX.setDof(). See _publish(). */
+    this._dofOpts = {
+      enabled: true, intensity: 0, autoFocus: true, focusDistance: undefined,
+      focusRange: 0, nearFalloff: 0, farFalloff: 0, maxBlur: 0,
+    };
     this._timers = [];
     this._unsub = [];
     this._warned = false;
@@ -822,6 +835,44 @@ export class CameraDirector {
     this.shaker.update(dt, this.pose.quaternion);
     this.finalPose.copy(this.pose);
     this.shaker.apply(this.finalPose, this.pose.shakeScale);
+    this._resolveShake();
+  }
+
+  /**
+   * Re-resolve the shake OFFSET against geometry.
+   *
+   * `ChaseCamera._avoid()` has already sphere-cast the boom and pulled the
+   * camera in until it clears the wall — and then the shaker adds up to
+   * `maxOffset (0.052) + impulseMax (0.14) = 0.19 m` of POSITIONAL displacement
+   * on top, in an arbitrary direction, after all of that work. On the RC scale
+   * that is two thirds of a car length, and the one moment it is guaranteed to
+   * be at full amplitude is a hard hit against a wall — i.e. exactly when the
+   * camera is already hugging it. The result is a frame or two of looking
+   * through the level.
+   *
+   * `this.pose.position` is the rig's resolved, known-good point, so the offset
+   * is a short cast from a safe origin: cheap, and it keeps the shake's punch
+   * instead of demoting it to rotation-only.
+   */
+  _resolveShake() {
+    const physics = this.ctx.physics;
+    if (!physics || !physics.trackMesh) return;
+
+    _v.subVectors(this.finalPose.position, this.pose.position);
+    const len = _v.length();
+    // Below ~1 cm nothing can clip through anything; skip the cast entirely so
+    // the common case (idle rumble) stays free.
+    if (len < 0.01) return;
+    _v.multiplyScalar(1 / len);
+
+    try {
+      if (!physics.sphereCast(this.pose.position, _v, SHAKE_RADIUS, len, _shakeHit, SHAKE_MASK)) return;
+      // A t≈0 hit means the rig pose itself is already inside geometry — not
+      // something the shake caused, and not something it can fix. Leave it.
+      if (_shakeHit.distance <= 0.02) return;
+      this.finalPose.position.copy(this.pose.position)
+        .addScaledVector(_v, Math.max(_shakeHit.distance - 0.01, 0));
+    } catch (err) { /* physics is optional; a failed cast just means no clamp */ }
   }
 
   _commit() {
@@ -840,7 +891,7 @@ export class CameraDirector {
       if (!poseFinite(p)) {
         p.position.set(0, 1.2, 2.4);
         p.quaternion.identity();
-        p.fov = CONFIG.render.fovBase;
+        p.fov = FOV_BASE;
         this.pose.copy(p);
       }
     }
@@ -882,26 +933,27 @@ export class CameraDirector {
       const want = clamp01(this.pose.dofIntensity);
       if (want > 0.002) {
         this._dofOwned = true;
-        try {
-          if (this.pose.focusDistance > 0) {
-            postfx.setDof({
-              enabled: true, intensity: want,
-              focusDistance: this.pose.focusDistance,
-              focusRange: this.pose.focusRange,
-              nearFalloff: this.pose.nearFalloff,
-              farFalloff: this.pose.farFalloff,
-              maxBlur: this.pose.maxBlur,
-            });
-          } else {
-            postfx.setDof({
-              enabled: true, intensity: want, autoFocus: true,
-              focusRange: this.pose.focusRange,
-              nearFalloff: this.pose.nearFalloff,
-              farFalloff: this.pose.farFalloff,
-              maxBlur: this.pose.maxBlur,
-            });
-          }
-        } catch (err) { /* ignore */ }
+        // Reused, never reallocated: the chase rigs now ask for DOF every racing
+        // frame (they used to publish 0 and take the `else` branch), so an object
+        // literal here would be a permanent allocation in a hot path.
+        // PostFX.setDof() only reads the fields — it never retains the object.
+        const o = this._dofOpts;
+        o.enabled = true;
+        o.intensity = want;
+        o.focusRange = this.pose.focusRange;
+        o.nearFalloff = this.pose.nearFalloff;
+        o.farFalloff = this.pose.farFalloff;
+        o.maxBlur = this.pose.maxBlur;
+        if (this.pose.focusDistance > 0) {
+          o.focusDistance = this.pose.focusDistance;
+          // setDof() already turns autofocus off when it is handed a distance;
+          // `undefined` is how it is told "no opinion".
+          o.autoFocus = undefined;
+        } else {
+          o.focusDistance = undefined;
+          o.autoFocus = true;
+        }
+        try { postfx.setDof(o); } catch (err) { /* ignore */ }
       } else if (this._dofOwned) {
         this._releaseDof();
       }

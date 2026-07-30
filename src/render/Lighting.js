@@ -21,9 +21,20 @@ import { BLOB_VERT, BLOB_FRAG } from './shaders/BlobShadowShader.js';
  *
  *  • every car also gets a procedural contact blob underneath, which is what
  *    actually sells "the wheels are touching the floor". Strong on low (where it
- *    is the main grounding cue), subtle everywhere else.
+ *    is the main grounding cue), subtle everywhere else. It is sized from
+ *    `car.def.length/width` and projected along the sun, so it reads as this
+ *    car's shadow under this sun rather than as a generic smudge.
  *
  * All of it is driven by `TrackData.environment`.
+ *
+ * ## The one field consumers should read
+ *
+ * `lighting.lightDirection` — a unit vector, the direction sunlight TRAVELS
+ * (down into the scene). Negate it for "toward the sun", or call
+ * {@link Lighting#getSunDirection}. Do NOT reconstruct it from
+ * `sun.position - sunTarget.position`: `sun` is invisible and parked whenever
+ * CSM is running, and a DirectionalLight's default position is (0,1,0) — which
+ * is a perfectly plausible-looking, perfectly wrong sun straight overhead.
  */
 
 // ── module scratch — nothing in update() allocates ────────────────────────────
@@ -31,6 +42,7 @@ const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _v3 = new THREE.Vector3();
 const _v4 = new THREE.Vector3();
+const _v5 = new THREE.Vector3();
 const _center = new THREE.Vector3();
 const _bbox = new THREE.Box3();
 const _quat = new THREE.Quaternion();
@@ -53,6 +65,20 @@ const CASCADE_BREAKS = {
 const MAX_FAR = { low: 18, medium: 22, high: 28, ultra: 34 };
 
 const MAX_BLOBS = 8;
+
+/**
+ * Blob half-extent as a fraction of the car's own footprint.
+ *
+ * `PlaneGeometry(2, 2)` spans [-1,1] and BLOB_FRAG's lobes reach the quad edge
+ * (`wheels` is a rounded box at |0.58,0.72| with corner radius 0.42, so it hits
+ * 1.0 and 1.14), which means the instance scale IS the world half-extent. 0.625
+ * = half the car plus a 25% penumbra margin, i.e. a 0.30 × 0.18 m car gets a
+ * 0.375 × 0.225 m shadow.
+ */
+const BLOB_MARGIN = 0.625;
+
+/** Metres. Rail against a sun near the horizon flinging a blob across the map. */
+const BLOB_MAX_DRIFT = 2.0;
 
 export class Lighting {
   /**
@@ -406,15 +432,48 @@ export class Lighting {
 
     if (this.csm) {
       this._updateCsm(camera, dt);
+      // CSM owns its own cascade lights and `this.sun` is parked & invisible —
+      // but it must STILL be aimed, see _orientSun().
+      this._orientSun();
     } else if (this.sun.castShadow) {
+      // writes sun.position/sunTarget.position itself, as part of the fit
       this._updateFocusShadow();
     } else {
-      // no shadows: still point the light correctly
-      this.sun.position.copy(this._focusPos).addScaledVector(this.lightDirection, -20);
-      this.sunTarget.position.copy(this._focusPos);
+      this._orientSun();
     }
 
     this._updateBlobs(dt);
+  }
+
+  /**
+   * Park `sun` 20 m up-sun of the focus and aim it at the focus.
+   *
+   * This is not (only) about the shadow map. `sun.position - sunTarget.position`
+   * is what every out-of-file consumer historically read to get the sun
+   * direction, and before this method existed that pair was written in exactly
+   * two places — `_updateFocusShadow()` and the no-shadow branch of `update()` —
+   * BOTH of which are unreachable once `CONFIG.render.shadowCascades >= 2`, i.e.
+   * on medium quality and up. A `THREE.DirectionalLight` initialises its position
+   * to `Object3D.DEFAULT_UP` = (0,1,0), so the stale pair had `lengthSq === 1`
+   * and sailed through every `> 1e-8` sanity guard while reporting a sun at the
+   * zenith. Running in all three branches is the fix; consumers reading
+   * `lightDirection` directly is the belt to that pair of braces.
+   */
+  _orientSun() {
+    this.sun.position.copy(this._focusPos).addScaledVector(this.lightDirection, -20);
+    this.sunTarget.position.copy(this._focusPos);
+    this.sunTarget.updateMatrixWorld();
+  }
+
+  /**
+   * Unit vector pointing TOWARD the sun — the direction to shade against.
+   * `lightDirection` is the direction light travels; most consumers (particle
+   * lambert terms, god-ray shafts, debris shading) want the negation.
+   * @param {THREE.Vector3} out
+   * @returns {THREE.Vector3} `out`
+   */
+  getSunDirection(out) {
+    return out.copy(this.lightDirection).negate();
   }
 
   _animateSun(dt) {
@@ -761,7 +820,12 @@ export class Lighting {
     this.scene.add(this.blobs);
 
     for (let i = 0; i < MAX_BLOBS; i++) {
-      this._blobData.push({ groundY: 0, normal: new THREE.Vector3(0, 1, 0), valid: false, fade: 0 });
+      this._blobData.push({
+        contact: new THREE.Vector3(),
+        normal: new THREE.Vector3(0, 1, 0),
+        valid: false,
+        fade: 0,
+      });
     }
   }
 
@@ -802,7 +866,7 @@ export class Lighting {
 
       if (contacts > 0) {
         _v1.divideScalar(contacts);
-        data.groundY = _v1.y;
+        data.contact.copy(_v1);
         if (_v2.lengthSq() > 1e-6) data.normal.copy(_v2).normalize();
         else data.normal.set(0, 1, 0);
         data.valid = true;
@@ -815,7 +879,10 @@ export class Lighting {
       group.getWorldPosition(_v3);
       group.getWorldQuaternion(_quat);
 
-      const height = Math.max(_v3.y - data.groundY, 0);
+      // Height PERPENDICULAR to the contact plane, not vertical — on a banked
+      // wall or a ramp the vertical drop is not the distance to the floor.
+      _v1.subVectors(_v3, data.contact);
+      const height = Math.max(_v1.dot(data.normal), 0);
       const fadeTarget = clamp01(1 - height / 1.1);
       data.fade = dt > 0 ? damp(data.fade, fadeTarget, 12, dt) : fadeTarget;
       if (data.fade < 0.02) continue;
@@ -830,11 +897,35 @@ export class Lighting {
       _mat.makeBasis(_v2, _v4, data.normal);
       _quat.setFromRotationMatrix(_mat);
 
-      // spread as the car lifts off, like a real penumbra
+      // ── footprint: this car's own size, plus a penumbra that spreads with lift ──
+      // Local +X is "right" and local +Y is "forward" (see the basis above), so
+      // x carries the car's WIDTH and y its LENGTH. Getting this from car.def
+      // instead of a constant is the difference between a shadow and a smear:
+      // the shipped 0.30/0.44 was a 0.60 × 0.88 m footprint under a 0.30 × 0.18 m
+      // car — three times too wide, and nothing in the frame said "toy".
+      const def = car.def;
+      const carW = Number.isFinite(def?.width) ? def.width : 0.18;
+      const carL = Number.isFinite(def?.length) ? def.length : 0.30;
       const spread = 1 + height * 1.35;
-      _scale.set(0.30 * spread, 0.44 * spread, 1);
+      _scale.set(carW * BLOB_MARGIN * spread, carL * BLOB_MARGIN * spread, 1);
 
-      _v1.set(_v3.x, data.groundY, _v3.z).addScaledVector(data.normal, 0.005);
+      // ── project the car onto the contact plane ALONG THE SUN ──
+      // Dropping straight down is only right for a sun at the zenith. Solving
+      // (P + t·dir − C)·n = 0 gives t = height / (−dir·n), so the blob slides
+      // out from under the car as the car lifts, which is the cheapest possible
+      // read on how high a jump actually is.
+      _v1.copy(_v3);
+      const denom = -this.lightDirection.dot(data.normal);
+      if (height > 1e-4 && denom > 0.15) {
+        _v1.addScaledVector(this.lightDirection, Math.min(height / denom, BLOB_MAX_DRIFT));
+        // The drift clamp can leave the point short of the plane; land it.
+        _v5.subVectors(_v1, data.contact);
+        _v1.addScaledVector(data.normal, -_v5.dot(data.normal));
+      } else {
+        _v1.addScaledVector(data.normal, -height);
+      }
+      _v1.addScaledVector(data.normal, 0.005);
+
       _mat.compose(_v1, _quat, _scale);
       blobs.setMatrixAt(n, _mat);
 
@@ -857,6 +948,10 @@ export class Lighting {
   _applySunToLights() {
     this.sun.color.copy(this.sunColor);
     this.sun.intensity = this.sunIntensity;
+    // Anything that changes lightDirection lands here, so this is also where the
+    // light gets re-aimed — a consumer that reads before the first update() must
+    // not see the DirectionalLight's (0,1,0) default.
+    if (this._installed) this._orientSun();
     if (this.csm) {
       this.csm.lightDirection.copy(this.lightDirection);
       this.csm.lightIntensity = this.sunIntensity;
