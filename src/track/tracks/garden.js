@@ -1123,7 +1123,13 @@ function buildRaceData(b) {
   });
 
   b.checkpoints({ count: 19, halfWidthPad: 1.6 });
-  b.startGrid({ count: 8, columns: 2, rowGap: 2.05, firstBack: 3.4, spread: 0.42 });
+  // The whole grid has to fit in the 7.5 m between the finish line and the deck
+  // jump's landing. At the stock 2.05 m row gap it needed 10.4 m, so rows 3 and
+  // 4 landed in the gap — `startGrid` now walks them back past it, which parks
+  // half the field on the deck 14 m behind the front row. Closing the rows up to
+  // 1.10 m (still 3.7 car lengths) puts all eight on the landing bank, in the
+  // classic staggered pair, and the guard has nothing to do.
+  b.startGrid({ count: 8, columns: 2, rowGap: 1.10, firstBack: 2.8, spread: 0.42 });
   b.respawns({ spacing: 12 });
 
   b.pickupRow(b.tNear([-37, 0, -8]), { count: 3, spread: 1.0 });

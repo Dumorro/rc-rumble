@@ -216,7 +216,11 @@ function walkCentreline(track, builder) {
     sp.sample(t1, _s1);
 
     // ── ground under the racing line ──
-    _s0.offset(0, PROBE_UP, _a);
+    // World up, not the road normal: on a banked section the normal leans, and
+    // an origin offset along it would probe a point beside the line, not above
+    // it. The ray itself is straight down because that is the direction a car
+    // falls.
+    _a.copy(_s0.position).addScaledVector(UP, PROBE_UP);
     const grounded = mesh.raycast(_a, DOWN, PROBE_UP + MAX_DROP, _hit);
     if (!grounded) {
       out.noGround.push({ t: t0, point: _s0.position.clone() });
