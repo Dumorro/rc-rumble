@@ -78,6 +78,7 @@
  *   • It says nothing about whether a lap is FUN.
  */
 
+import { pathToFileURL } from 'node:url';
 import * as THREE from 'three';
 import { TrackSystem } from '../src/track/TrackSystem.js';
 import { TrackBuilder } from '../src/track/TrackBuilder.js';
@@ -448,3 +449,27 @@ export function runDrivabilityCheck(C, log = console.log) {
 }
 
 export default runDrivabilityCheck;
+
+// ─────────────────────────────────────────────────────────── CLI
+
+/**
+ * Run directly: `node tools/drivability.mjs`
+ *
+ * This guard was missing, and its absence was worse than a plain bug. Three
+ * documents told authors to use this as their fast inner loop — "run it
+ * constantly, fix until clean" — and without an entry point the file exported
+ * its function and exited 0 in silence. The prescribed loop was unconditionally
+ * green, so anyone who read silence as success would iterate against a no-op
+ * until `npm run check` finally told them the truth.
+ */
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) {
+  const plain = process.argv.includes('--no-color') || !process.stdout.isTTY;
+  const paint = (code) => (s) => (plain ? String(s) : `\x1b[${code}m${s}\x1b[0m`);
+  const C = {
+    red: paint(31), green: paint(32), yellow: paint(33),
+    dim: paint(2), bold: paint(1),
+  };
+  const failed = runDrivabilityCheck(C);
+  process.exit(failed === 0 ? 0 : 1);
+}

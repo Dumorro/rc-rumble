@@ -40,7 +40,9 @@ world is life-size; the car is a toy. A 7 cm lip is a quarter of a car length. G
 Everything hangs off the centreline — road, checkpoints, grid, respawns, AI path, camera.
 Get it right before you build anything you can see.
 
-Nodes are `[x, y, z, halfWidth]`. Node 0 is the start/finish line, and the direction of
+Nodes are `[x, y, z, width]`. That fourth value is the **full road width in metres**
+(`Spline.js:58`) — not a half-width. Read it as a half-width and you build the whole
+track at twice the intended size. Node 0 is the start/finish line, and the direction of
 travel is toward node 1.
 
 Create `src/track/tracks/rooftop.js`:
@@ -62,7 +64,10 @@ const NODES = [
 ```
 
 Sanity-check the shape before going further: ~130 m of lap at 9 m/s is only ~15 s, which
-is far too short. **Aim for 300–350 m — a 45–75 s lap.** Both shipped tracks are ~300 m.
+is far too short. **Aim for 300–350 m.** For reference, the shipped tracks measure 348 m
+(museum), 302 m (garden) and 348 m (supermarket), and the builder's own
+`estimatedLapSeconds` puts a clean museum lap at **44.1 s** — so treat ~45 s as the floor
+and expect 50–60 s once you are fighting seven other cars.
 Spread the nodes wider, or add more of them, until the arithmetic works.
 
 A corner's minimum radius matters too. The AI solves corner speed as `sqrt(a_lat / k)`

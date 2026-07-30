@@ -1,7 +1,22 @@
 # TrackBuilder API
 
-Extracted from `src/track/TrackBuilder.js`. Regenerate rather than hand-edit —
-this file is the source talking, not a summary of it.
+Generated from the JSDoc in `src/track/TrackBuilder.js`. Regenerate rather than
+hand-edit.
+
+> **A generator cannot know when the source is lying.** This file once faithfully
+> reproduced a `jumpGap` docblock claiming it builds a landing ramp; it does not, and
+> because the file presents as "the source talking", the false claim read as more
+> authoritative than prose would have. Fix wrong JSDoc at the source, then regenerate.
+>
+> Known source-vs-name divergences, which live here because no generator can find them:
+> `jumpGap` lip eases with f² over `lipLength` against 0.28 m stations, so an authored
+> angle comes out roughly half · `GeoLib.polygonXZ` negates z, mirroring polygon floors
+> about X · `GeoLib.extrudeOutline` takes an XY outline extruded along Z, so a ramp
+> cheek needs rotating into plane · `wall({ skirting })` hardcodes `SurfaceId.WOOD`
+> whatever the skirting material · `shortcutRoad` is optional and will float a ribbon
+> over your own geometry if your shortcut already has some · `_surfaceHint` falls back
+> to `defaultSurface()` headlessly, so AI speeds differ between the audited and the
+> driven track.
 
 ### `mat(name, opts = null)`
 
@@ -31,14 +46,14 @@ Decal / sign / banner material. */
 A wind-swayed clone of a material. Registered for per-frame updates.
 @param {THREE.Material} base
 
-### `centerline(nodes, opts = {})`
+### `centerline(nodes, opts =`
 
 Define the racing centreline. Nodes may be `[x, y, z, width?, bank?, camber?]`
 or `{ p:[x,y,z], w, bank, camber, tag }`.
 @param {Array} nodes
 @param {object} [opts] see {@link CenterlineSpline}
 
-### `at(t, out = _smp) { return this.spline ? this.spline.sample(t, out) : out; }`
+### `at(t, out = _smp)`
 
 Sample the centreline. Returns a shared scratch — copy if you keep it. */
 
@@ -60,7 +75,7 @@ anchoring props to the racing line.
 
 Signed lateral offset (metres, +right) of a world point from the road. */
 
-### `add(geometry, material, opts = {})`
+### `add(geometry, material, opts =`
 
 Add a geometry to the world.
 @param {THREE.BufferGeometry} geometry consumed — do not reuse afterwards
@@ -78,11 +93,11 @@ Add a geometry to the world.
 @param {boolean} [opts.noMerge] give it its own mesh (animated objects)
 @returns {THREE.BufferGeometry} the world-space geometry that was stored
 
-### `addAt(geometry, material, position, rotation = null, scale = null, opts = {})`
+### `addAt(geometry, material, position, rotation = null, scale = null, opts =`
 
 Same as {@link add} but with position/rotation/scale instead of a matrix. */
 
-### `instance(key, geometry, material, matrix, opts = {})`
+### `instance(key, geometry, material, matrix, opts =`
 
 Register one instance of a repeated prop geometry. All instances sharing
 `key` become a single `InstancedMesh`.
@@ -92,11 +107,11 @@ Register one instance of a repeated prop geometry. All instances sharing
 @param {THREE.Matrix4} matrix
 @param {object} [opts] `collide`: false | true | 'box' (cheap AABB hull)
 
-### `instanceAt(key, geometry, material, position, rotation = null, scale = null, opts = {})`
+### `instanceAt(key, geometry, material, position, rotation = null, scale = null, opts =`
 
 Convenience wrapper for {@link instance} with TRS arguments. */
 
-### `addObject(obj, { animated = false, decor = true, collide = false, surfaceId = 0 } = {})`
+### `addObject(obj,`
 
 Attach an already-built Object3D (animated props). Never merged. */
 
@@ -109,14 +124,14 @@ Add raw triangles straight to collision without any visual (blockers). */
 An invisible wall — the safety net that stops a car leaving the world.
 @param {number[]} a `[x, z]` @param {number[]} bb `[x, z]`
 
-### `blocker(center, size, o = {})`
+### `blocker(center, size, o =`
 
 An invisible solid volume. The workhorse for making a visually complex prop
 (a skeleton's legs, a bush, a fence) collide as something simple and cheap.
 @param {number[]} center `[x, y, z]` — y is the BOTTOM of the volume
 @param {number|number[]} size `s` or `[w, h, d]`
 
-### `road(o = {})`
+### `road(o =`
 
 Loft the racing surface along the centreline.
 @param {object} [o]
@@ -137,28 +152,35 @@ Loft the racing surface along the centreline.
        under the ribbon so an elevated road is solid from below
 @param {number} [o.centreLine] optional painted centre stripe width
 
-### `stripe(o = {})`
+### `stripe(o =`
 
 A flat "runner" laid on top of the road — carpet strips, painted lines,
 damp patches. Slightly raised and bevelled at the edges so a wheel cannot
 catch on it. `surfaceId: null` makes it a pure decal (no collision), which
 is what you want for paint.
 
-### `roadUnderside(o = {})`
+### `roadUnderside(o =`
 
 A solid underside + side walls for an elevated stretch of road. */
 
-### `railing(o = {})`
+### `railing(o =`
 
 A see-through railing along the road: two rails plus posts. Collides so a
 car bounces off it, but you can see the drop behind it.
 
-### `jumpGap(from, to, o = {})`
+### `jumpGap(from, to, o =`
 
 Mark a stretch of the centreline as **air** — no road surface. Used for
 jumps: the spline still runs through it (so lap progress and the AI keep
 working) but there is nothing to drive on.
-Automatically builds a take-off lip and a landing ramp unless disabled.
+Builds a take-off lip only. There is NO landing ramp — this docblock used to
+claim one, the generated API reference copied the claim, and an author
+trusted it. If you need a landing, build it yourself.
+NOTE the lip comes out shallower than you ask for: the rise eases with f^2
+over `lipLength` while loft stations sit 0.28 m apart, so the last station
+stops short of the full slope. A 7.6 deg design measured 3.44 deg on the
+built mesh. Measure the lip off the CollisionMesh rather than trusting the
+option — see docs/TUTORIAL-building-a-track.md.
 
 ### `isGap(t)`
 
@@ -168,12 +190,12 @@ True if a lap fraction falls inside a declared jump gap. */
 
 The t-ranges of the road that are NOT gaps, in order from `from`. */
 
-### `roadWithGaps(o = {})`
+### `roadWithGaps(o =`
 
 Loft the road but skip every declared jump gap. This is what tracks should
 call: `b.roadWithGaps({ … })`.
 
-### `floor(o = {})`
+### `floor(o =`
 
 A flat floor region (a hall floor, a patio, a lawn). Either an axis-aligned
 rectangle or an arbitrary polygon.
@@ -185,12 +207,12 @@ rectangle or an arbitrary polygon.
 @param {number} [o.y=0]
 @param {number} [o.rotation] radians about Y (rect only)
 
-### `wall(a, b, o = {})`
+### `wall(a, b, o =`
 
 A vertical wall between two XZ points. `both` gives it thickness (a real
 slab); otherwise it is a single-sided plane facing left of a→b.
 
-### `room(o = {})`
+### `room(o =`
 
 A closed room shell: four walls (with optional door gaps), a floor and a
 ceiling. The single most useful indoor primitive.
@@ -200,7 +222,7 @@ ceiling. The single most useful indoor primitive.
 @param {Array<{side:'n'|'s'|'e'|'w', at:number, width:number, height?:number}>} [o.doors]
        `at` is the world coordinate along the wall's axis
 
-### `ramp(o = {})`
+### `ramp(o =`
 
 A ramp between two world points. Automatically fitted: length and pitch come
 from the endpoints, and it gets a lead-in wedge so a wheel never hits a step.
@@ -214,17 +236,17 @@ from the endpoints, and it gets a lead-in wedge so a wheel never hits a step.
        surface already meets the ground and a wedge would be a hump.
 @param {object|false} [o.rails] `{ height, material }`
 
-### `kicker(t, o = {})`
+### `kicker(t, o =`
 
 A kicker jump on the road at lap fraction `t`: a short raised wedge across
 the racing line. Cars pop off it; nothing can catch on it.
 
-### `halfPipe(o = {})`
+### `halfPipe(o =`
 
 A half-pipe / banked wall: the road's outer edge curls up into a smooth
 quarter-circle you can ride.
 
-### `loop(o = {})`
+### `loop(o =`
 
 A stunt loop-the-loop: a full vertical circle of road, entered and exited
 tangentially at ground level. Built on its own spline so the main
@@ -236,57 +258,57 @@ centreline (and therefore lap progress) is untouched.
 @param {number} [o.width=1.9]
 @param {number} [o.lead=2.5] straight lead-in/out length
 
-### `stairs(o = {})`
+### `stairs(o =`
 
 A flight of stairs from `from` to `to` (world points). Steps are real
 geometry with a solid skirt, so a car can bounce down them but cannot fall
 inside.
 
-### `bridge(o = {})`
+### `bridge(o =`
 
 A bridge / plank between two world points: a deck with optional kerbs,
 solid underneath, plus supports.
 
-### `tunnel(o = {})`
+### `tunnel(o =`
 
 A tunnel: a lofted half-cylinder shell over a stretch of the road, open at
 both ends, dark inside. Collides on the inside so a car can ride the walls.
 
-### `banner(t, o = {})`
+### `banner(t, o =`
 
 An overhead banner / arch across the road. Two posts and a stretched cloth
 with procedurally drawn text.
 
-### `finishLine(t, o = {})`
+### `finishLine(t, o =`
 
 A painted start/finish line across the road (chequered, drawn in code).
 
-### `patch(o = {})`
+### `patch(o =`
 
 A ground decal patch (oil, damp, scuff, a sprinkler's wet arc). Purely
 visual unless `surfaceId` is given.
 
-### `prop(kind, opts = {})`
+### `prop(kind, opts =`
 
 Place a prop from the library. See `Props.js` for the catalogue.
 @param {string} kind
 @param {object} opts `{ position, rotation, scale, color, dynamic, instanced, … }`
 
-### `scatter(kind, o = {})`
+### `scatter(kind, o =`
 
 Scatter `count` copies of a prop inside a rectangle, avoiding the road. */
 
-### `line(kind, o = {})`
+### `line(kind, o =`
 
 Line props up along a stretch of road at a lateral offset — velvet ropes,
 cones marking a chicane, dominoes, hedges.
 
-### `checkpoints(o = {})`
+### `checkpoints(o =`
 
 Generate checkpoints along the centreline. `checkpoints[0]` is the finish.
 @param {{count?:number, halfWidthPad?:number, height?:number, depth?:number, finishT?:number}} [o]
 
-### `startGrid(o = {})`
+### `startGrid(o =`
 
 A staggered start grid behind the finish line. ≥ 8 slots by contract.
 Slots are pushed FURTHER BACK past any declared jump gap. `respawns()` has
@@ -299,22 +321,22 @@ whole grid shifts by the same amount so the stagger is preserved.
 @param {{count?:number, rowGap?:number, columns?:number, spread?:number,
          firstBack?:number, lift?:number, finishT?:number}} [o]
 
-### `respawns(o = {})`
+### `respawns(o =`
 
 Respawn points every `spacing` metres, each tagged with the checkpoint it
 belongs to. Guaranteed to sit on solid road (gaps are skipped forward).
 
-### `pickupRow(t, o = {})`
+### `pickupRow(t, o =`
 
 A row of pickup pads across the road at lap fraction `t`.
 @param {number} t
 @param {{count?:number, spread?:number, y?:number, radius?:number}} [o]
 
-### `pickupPads(o = {})`
+### `pickupPads(o =`
 
 Evenly spaced pickup rows around the lap. */
 
-### `shortcut(o = {})`
+### `shortcut(o =`
 
 A registered shortcut. `nodes` (world points) define its own drivable line;
 the builder derives AI nodes for it so the AI can occasionally take it.
@@ -327,12 +349,12 @@ the builder derives AI nodes for it so the AI can occasionally take it.
 @param {number} [o.width=1.8]
 @param {number} [o.savedMetres] how much shorter it is (informational)
 
-### `shortcutRoad(sc, o = {})`
+### `shortcutRoad(sc, o =`
 
 Loft a shortcut's road surface using its own spline. Call after
 {@link shortcut}.
 
-### `aiPath(o = {})`
+### `aiPath(o =`
 
 Build the AI path from the centreline: a node every `spacing` metres with a
 curvature-derived target speed, then a two-pass braking/acceleration solve
@@ -340,7 +362,7 @@ so the speeds are actually reachable.
 @param {{spacing?:number, topSpeed?:number, brake?:number, accel?:number,
          tyre?:number, safety?:number, raceLine?:boolean}} [o]
 
-### `defaultSurface(sid) { this._defaultSurfaceId = sid; return this; }`
+### `defaultSurface(sid)`
 
 Tell the AI-path builder what the road is mostly made of. */
 
@@ -352,7 +374,7 @@ Store the render-system environment descriptor. */
 
 Store the audio descriptor (reverb + ambience). */
 
-### `gripZone(o = {})`
+### `gripZone(o =`
 
 A grip-modifying zone the vehicle system may optionally sample (a
 sprinkler's wet arc, a patch of spilled oil that is animated). The baked

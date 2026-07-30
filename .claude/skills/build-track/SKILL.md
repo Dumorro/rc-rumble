@@ -33,7 +33,8 @@ import { SurfaceId } from '../Surfaces.js';
 import * as G from '../GeoLib.js';
 
 const NODES = [
-  [-40, 0, 14, 3.2],   // x, y, z, halfWidth — 0 is START/FINISH, heading is toward node 1
+  [-40, 0, 14, 3.2],   // x, y, z, FULL road width (Spline.js:58) — not a half-width.
+                       // node 0 is START/FINISH; travel is toward node 1
   [-40, 0, 2, 3.2],
   // …
 ];
@@ -46,7 +47,7 @@ export default {
   theme: 'indoor',              // indoor | outdoor — drives sky, IBL and reverb
   order: 2,                     // menu position
   seed: 90210,                  // any scatter/jitter is seeded from this; keep it fixed
-  previewColors: [0x..., 0x..., 0x...],
+  previewColors: [0xe8eef4, 0xf0b21e, 0x1e6fbf],   // 3 colours for the menu card
   description: 'One sentence the track-select screen shows.',
 
   /** @param {import('../TrackBuilder.js').TrackBuilder} b */
@@ -94,10 +95,17 @@ Read `references/builder-api.md` for the full signatures. The shape of it:
 | bounds | `invisibleWall` `blocker` |
 | race data | `checkpoints` `startGrid` `respawns` `pickupRow` `aiPath` |
 | materials | `mat(name, opts)` `matForSurface(id)` `vcolor` `windMaterial` |
+| shortcuts / zones | `shortcut` `shortcutRoad` (optional — omit if your shortcut already has geometry, or you float a ribbon over it) `gripZone` `pickupPads` `defaultSurface` |
 
-`kicker()`, `loop()`, `halfPipe()`, `tunnel()` and `roadWithGaps()` all exist, are
-tested, and **have never been called by a track**. Both shipped tracks are flat. If you
-are adding verticality, reach for these before hand-rolling geometry.
+Material keys live in **`src/render/ProceduralTextures.js`**, not `Materials.js` — there
+are 53 of them and grepping the obvious file finds 16.
+
+`kicker()`, `loop()`, `halfPipe()`, `tunnel()` and `roadWithGaps()` all exist and **have
+never been called by a track**. Read that as *unexercised on a real layout — budget for
+surprises*, not as *safe*: the track self-test only builds the shipped tracks, so none of
+these has ever run in anger. They are still the right tools for verticality, and both
+older tracks being flat is a gap worth closing. Measure what they build (see above)
+rather than assuming the options mean what they say.
 
 Props available to `prop`/`scatter`/`line`: `alphabet_block ball block book_stack bush
 can chess column cone crate crate_heavy dice dino_skeleton display_case domino flower
@@ -109,8 +117,10 @@ tin_bucket watering_can`.
 Use `SurfaceId.*` (see `src/track/Surfaces.js`). The grip column is frozen — physics,
 audio and FX all key off these ids.
 
-The trap: a shortcut is only a gamble if its surface is genuinely worse **on every
-channel**. Grass once beat gravel on grip *and* rolling resistance *and* drag *and*
+The trap: a shortcut is only a gamble if its surface is genuinely worse on the channels
+that can differ. Note `drag` is **0 for every dry surface**, so indoors three-of-four
+(grip, rollingResistance, bumpiness) is the ceiling — do not reach for water or oil just
+to satisfy a fourth. Grass once beat gravel on grip *and* rolling resistance *and* drag *and*
 bumpiness, so cutting the lawn was strictly free and the intended racing line was the
 slow way round. When you place a tempting surface, compare all four numbers, not just grip.
 
@@ -156,6 +166,59 @@ both from the centreline, so this only bites if you hand-author them.
 
 **Texel density.** `b.mat(name)` requests `sizeMeters: 1` by default so texture scale is
 consistent everywhere. Override only with a physical reason, and in metres.
+
+## Measuring a built track headlessly
+
+The gate tells you the corridor is clear. It cannot tell you whether your jump lands,
+whether your shortcut is actually shorter, or whether the thing you built matches the
+thing you designed. **Measure the built `CollisionMesh` — never trust your own numbers.**
+
+This section exists because an author following the rest of this document still shipped a
+"jump" that was a step down onto solid ground: they had cut a pit out of the floor and
+then laid another slab straight over it. **A declared gap that is not a gap is invisible
+to the gate**, exactly like an unclearable one. Raycasting found it in seconds.
+
+Build a track outside the game and probe it:
+
+```js
+import { TrackBuilder } from './src/track/TrackBuilder.js';
+import { createRayHit } from './src/physics/CollisionMesh.js';
+import mytrack from './src/track/tracks/mytrack.js';
+
+const b = new TrackBuilder(null, { id: mytrack.id, seed: mytrack.seed });
+mytrack.build(b);
+const t = b.build();                       // t.collision, t.spline, t.shortcuts, …
+const hit = createRayHit();
+```
+
+**Read a jump's real profile** — walk the line in 5 mm steps and raycast down:
+
+```js
+for (let x = takeoffX - 0.5; x < landingX + 0.5; x += 0.005) {
+  const from = new THREE.Vector3(x, 3, z);
+  const y = t.collision.raycast(from, DOWN, 6, hit) && hit.hit ? 3 - hit.distance : null;
+  // the last solid y before the drop is your take-off; the first after is your landing
+}
+```
+
+Then feed the measured take-off, landing and lip angle into the ballistic formula below —
+not your design values. A design that said 1.35 m gap / 7.6° lip measured 1.50 m / 3.44°
+on the built mesh, because `jumpGap` eases the lip with f² over `lipLength` while loft
+stations sit 0.28 m apart. **Every authored lip angle comes out roughly half.**
+
+**Check a shortcut is really shorter:** compare `t.shortcuts[0].length` against the
+main-line arc between its `entryT` and `exitT`. A "shortcut" that is longer is scenery.
+
+**Sweep the corridor for margin** rather than accepting the gate's pass/fail: re-run its
+corridor check at ±0.45 / 0.60 / 0.75 / 0.90 m and see where your track first goes red.
+The header of `tools/drivability.mjs` records the shipped tracks' numbers, so you can
+calibrate against them — reproduce that table first to prove your harness is sound.
+
+**Clearances you would otherwise eyeball:** sample the spline every 0.25 m, project each
+piece of scenery onto it, and take the minimum. Ten lines, and it replaces the hour that
+hand-computing three layout revisions costs.
+
+`estimatedLapSeconds` on the built track gives you the lap-time sanity check.
 
 ## What the gate checks — and what it does not
 

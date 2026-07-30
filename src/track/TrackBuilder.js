@@ -761,7 +761,15 @@ export class TrackBuilder {
    * jumps: the spline still runs through it (so lap progress and the AI keep
    * working) but there is nothing to drive on.
    *
-   * Automatically builds a take-off lip and a landing ramp unless disabled.
+   * Builds a take-off lip only. There is NO landing ramp — this docblock used to
+   * claim one, the generated API reference copied the claim, and an author
+   * trusted it. If you need a landing, build it yourself.
+   *
+   * NOTE the lip comes out shallower than you ask for: the rise eases with f^2
+   * over `lipLength` while loft stations sit 0.28 m apart, so the last station
+   * stops short of the full slope. A 7.6 deg design measured 3.44 deg on the
+   * built mesh. Measure the lip off the CollisionMesh rather than trusting the
+   * option — see docs/TUTORIAL-building-a-track.md.
    */
   jumpGap(from, to, o = {}) {
     this._gaps.push([from, to, o]);
