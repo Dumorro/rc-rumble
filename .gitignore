@@ -3,3 +3,6 @@ dist
 .DS_Store
 *.log
 tools/.smoke
+
+# Playwright MCP scratch output (screenshots, console dumps, a11y snapshots)
+.playwright-mcp/
