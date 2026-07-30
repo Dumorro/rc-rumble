@@ -33,9 +33,10 @@ import { SURFACES, SurfaceId, createSurfaceTable, getSurface } from './Surfaces.
 import { CenterlineSpline, SplineSample, ClosestResult } from './Spline.js';
 import toyMuseum from './tracks/toy_museum.js';
 import garden from './tracks/garden.js';
+import supermarket from './tracks/supermarket.js';
 
 /** Every track module known to the game, in menu order. */
-const BUILTIN = [toyMuseum, garden];
+const BUILTIN = [toyMuseum, garden, supermarket];
 
 const _sample = new SplineSample();
 const _closest = new ClosestResult();
