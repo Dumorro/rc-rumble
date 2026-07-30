@@ -32,7 +32,6 @@ const _b = new THREE.Vector3();
 const _c = new THREE.Vector3();
 const _d = new THREE.Vector3();
 const _t1 = new THREE.Vector3();
-const _t2 = new THREE.Vector3();
 const _n1 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion();
 const _m1 = new THREE.Matrix4();

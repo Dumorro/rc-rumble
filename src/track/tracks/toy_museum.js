@@ -284,14 +284,14 @@ function buildRoad(b) {
   // Laid along the LEFT third: cutting the inside is slower than staying wide.
   b.stripe({
     from: b.spline.wrapT(-14 / L), to: b.spline.wrapT(26 / L),
-    width: 1.5, offset: -0.75, y: 0.010, bevel: 0.09,
+    width: 1.3, offset: -1.05, y: 0.010, bevel: 0.09,
     material: 'carpet/loop_pile', surfaceId: SurfaceId.CARPET,
     matOpts: { params: { color: 0x8b2226, loops: 56 } },
   });
   // A second runner across the return leg through the Grand Hall.
   b.stripe({
     from: b.tNear([-11, 0, 4]), to: b.tNear([-29, 0, 3]),
-    width: 1.7, offset: 0.5, y: 0.010, bevel: 0.09,
+    width: 1.5, offset: 0.95, y: 0.010, bevel: 0.09,
     material: 'carpet/loop_pile', surfaceId: SurfaceId.CARPET,
     matOpts: { params: { color: 0x7d3a20, loops: 48 } },
   });

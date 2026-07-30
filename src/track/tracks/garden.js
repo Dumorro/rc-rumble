@@ -31,8 +31,13 @@ import { buildSprinkler, buildFan } from '../Props.js';
 
 const YARD = { x0: -46, x1: 46, z0: -42, z1: 42 };
 const FENCE_H = 1.6;
-/** Lawn datum — the gravel path sits proud of it by ~3 cm. */
-const LAWN_Y = -0.035;
+/**
+ * Lawn datum. The gravel path runs at y = 0 and the lawn sits 9 cm below it,
+ * which is enough headroom for the Catmull-Rom undershoot (~7 cm) on the
+ * approach to the 1 m rockery crest — any shallower and the path dips *under*
+ * the grass for a few metres and the wheels read the wrong surface.
+ */
+const LAWN_Y = -0.09;
 const POND = { x: 31, z: 30, r: 5.4, depth: 0.09 };
 const GREENHOUSE = { x0: 27, x1: 43, z0: -30, z1: -13, y: 0.15, h: 2.6 };
 /** Openings in the greenhouse, sized and placed where the racing line crosses. */
@@ -42,7 +47,7 @@ const GH_DOORS = {
 };
 const DECK = { x0: -44, x1: -34, z0: 24, z1: 36, y: 1.10 };
 const HOUSE = { x0: -46, x1: -30, z0: -6, z1: 16, h: 6.5 };
-const ROCKERY = { x: -27, z: -35, r: 7.5, h: 1.0 };
+const ROCKERY = { x: -30.5, z: -38.5, r: 5.2, h: 0.95 };
 
 const NODES = [
   [-38, 0, 12, 3.2],       // 0  ← START / FINISH, heading −Z
@@ -176,7 +181,10 @@ function buildRoad(b) {
   const gravel = {
     material: 'gravel/bed', surfaceId: SurfaceId.GRAVEL, step: 0.8,
     shoulder: {
-      width: 0.6, drop: -0.035,
+      // A 0.9 m grass verge sloping down to the lawn: it is a real surface-5
+      // run-off (grip 0.60 vs the path's 0.55 gravel, but far bumpier and with
+      // 5× the rolling resistance) and it hides the step down to the lawn.
+      width: 0.9, drop: -0.075,
       material: 'grass/lawn', surfaceId: SurfaceId.GRASS,
     },
   };
@@ -575,17 +583,27 @@ function buildDeck(b) {
 
 function buildRockery(b) {
   const R = ROCKERY;
-  // The mound the path climbs over. The road ribbon rides the spline (which
-  // peaks at y = 1.0 at node 5), so the mound only has to fill in around it.
-  const mound = G.moundGeo(R.r, R.h + 0.15, 30, 17, 0.22);
+
+  // The crest the path goes over is built as a solid earth berm UNDER the road
+  // ribbon, not as a mound the ribbon is draped over: a mound would poke
+  // through the tarmac wherever its dome was steeper than the spline, which is
+  // exactly what leaves a car scraping dirt on the racing line.
+  b.roadUnderside({
+    from: b.tNear([-31, 0, -30]), to: b.tNear([-16, 0, -37]),
+    depth: 1.5, overhang: 1.1, step: 0.7,
+    material: 'dirt/ground', surfaceId: SurfaceId.DIRT,
+  });
+
+  // The decorative rockery proper sits beside the crest.
+  const mound = G.moundGeo(R.r, R.h, 26, 17, 0.22);
   b.addAt(mound, b.mat('dirt/ground', { color: 0x74603f }), [R.x, 0, R.z], null, 1,
     { surfaceId: SurfaceId.DIRT, cast: true, receive: true });
   mound.dispose();
 
-  // Rocks bedded into it.
-  for (let i = 0; i < 16; i++) {
+  // Rocks bedded into it and along the berm flanks.
+  for (let i = 0; i < 18; i++) {
     const a = b.rnd() * Math.PI * 2;
-    const rr = 1.6 + b.rnd() * (R.r - 1.4);
+    const rr = 1.4 + b.rnd() * (R.r - 1.2);
     const x = R.x + Math.cos(a) * rr;
     const z = R.z + Math.sin(a) * rr;
     const h = Math.max(0, R.h * (1 - (rr / R.r) ** 2)) - 0.12;
@@ -599,14 +617,14 @@ function buildRockery(b) {
   // Alpines in the gaps.
   b.scatter('flower', {
     min: [R.x - R.r, R.z - R.r], max: [R.x + R.r, R.z + R.r],
-    count: 26, clearRoad: 1.4, y: 0.25,
+    count: 26, clearRoad: 1.4, y: 0.2,
     propOpts: { height: 0.22, color: 0xe0679a, seed: 2 },
     scaleRange: [0.6, 1.0], instanced: true,
   });
 
   // A warning post at the blind crest.
   b.prop('picture_frame', {
-    position: [R.x + 3.2, 1.05, R.z + 3.6], rotation: [0, -0.9, 0],
+    position: [-27.5, 0.9, -33.0], rotation: [0, -0.9, 0],
     width: 0.7, height: 0.4, text: 'BLIND CREST',
     background: '#9a7212', textColor: '#241b06', frameColor: 0x8a6a3a,
   });
@@ -814,7 +832,6 @@ function buildHouseAndFence(b) {
   // like palings once the plank texture is on it, and costs four slabs instead
   // of two thousand instanced boards — the posts and the capping rail carry the
   // silhouette.
-  const boardMat = b.mat('wood/pine_planks', { color: 0x8a6f47, rotation: Math.PI / 2 });
   const trimMat = b.mat('wood/pine_planks', { color: 0x6f5636 });
   const sides = [
     { a: [YARD.x0, YARD.z0], c: [YARD.x1, YARD.z0], axis: 'x' },
@@ -852,7 +869,6 @@ function buildHouseAndFence(b) {
   }
   postGeo.dispose();
   capGeo.dispose();
-  void boardMat;
 }
 
 // ════════════════════════════════════════════════════════════════ planting

@@ -232,23 +232,37 @@ export class Car {
       angularDamping: 0.10,
       allowSleep: false,
       /**
-       * MUST stay off for a car. `PhysicsWorld._applyCCD` sweeps a sphere of
-       * `0.6 × boundingRadius` — 0.10 m for these hulls — from the body's
-       * PREVIOUS position. A car's centre of mass sits 21-72 mm above the
-       * road, so that sphere is *already* intersecting the floor before the
-       * sweep starts: it reports a hit at distance 0, the body is snapped back
-       * to `prevPosition`, and the car freezes solid at speed with its velocity
-       * intact. Observed exactly that — cars stopping dead at ~9.6 m/s and
-       * steering uselessly forever, with no error anywhere.
+       * Continuous collision. This was OFF for a while, for a good reason that
+       * has since been fixed at source — read both halves before touching it.
        *
-       * Tunnelling is handled where it actually happens instead: the
-       * suspension lifts its cast origin by the frame's fall distance
-       * (`MAX_PREDICT_LIFT`), so the wheels catch a floor a whole step early,
-       * and the chassis hull is 96-336 mm long against a 0.083 m step at
-       * 10 m/s. If a genuinely thin platform ever needs protection, the fix is
-       * a swept-hull test, not this sphere.
+       * WHY IT WAS OFF: `PhysicsWorld._applyCCD` used to sweep a sphere of
+       * `0.6 × boundingRadius` (0.10 m for these hulls) from the body's
+       * previous position. A car's COM sits 21-72 mm above the road, so that
+       * sphere was already inside the floor before the sweep began — it
+       * reported a hit at distance 0, the body was snapped back to
+       * `prevPosition`, and the car froze solid at speed with its velocity
+       * intact. Measured: needle and phantom locked up for 758 of 1200 steps.
+       *
+       * WHY IT IS BACK ON: that was a real invariant violation in the engine
+       * (CCD placing a body BEHIND where the step started), not a reason to
+       * skip CCD. `_applyCCD` now sizes its sweep from the collider's smallest
+       * half-extent so the sphere fits inside the shape, treats a hit at
+       * distance ≈ 0 as "the discrete solver already owns this contact", and
+       * refuses to move a body backwards past its step start.
+       *
+       * WHY IT IS NEEDED: the suspension's `MAX_PREDICT_LIFT` caps at 0.10 m
+       * while the per-step fall keeps growing, so it stops covering the gap at
+       * ~12 m/s. Measured with a real car, suspension running, ccd off: holds a
+       * thin platform at 8 and 12 m/s, falls clean through at 16, 20, 24, 32
+       * and 48, ending 58 m below the world. At 2g, 16 m/s is a 6.5 m fall —
+       * a museum shelf. With ccd on it holds every one of those.
+       *
+       * Known limit, accepted: a horizontal wall charge at exactly 20 m/s still
+       * passes through. That is twice the fastest car's top speed and only
+       * reachable via a weapon impulse, and ccd-on is never worse than ccd-off
+       * at any speed tested. Strict improvement, not a guarantee.
        */
-      ccd: false,
+      ccd: true,
       userData: this,
       name: `car:${def.id}:${this.id}`,
     });
