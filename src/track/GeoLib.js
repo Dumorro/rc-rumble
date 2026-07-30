@@ -243,7 +243,10 @@ export function trs(px, py, pz, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, sz = sx
 export function boxMeters(w, h, d, o = {}) {
   const hx = w * 0.5, hy = h * 0.5, hz = d * 0.5;
   const r = Math.max(0, Math.min(o.radius ?? 0, Math.min(hx, hy, hz) * 0.98));
-  const seg = r > 0 ? Math.max(2, Math.min(8, o.seg ?? Math.ceil(r / 0.012) + 1)) : 1;
+  // A bevel costs 6·seg² quads. The default is deliberately mean (2, or 3 for a
+  // chunky radius) because this is the single most-instantiated primitive in the
+  // game; ask for more explicitly when a prop is a hero object.
+  const seg = r > 0 ? Math.max(2, Math.min(8, o.seg ?? (r > 0.06 ? 3 : 2))) : 1;
   const skip = o.skip ?? '';
 
   const positions = [];
@@ -613,13 +616,18 @@ export function ropeBetween(a, b, radius = 0.02, sag = 0.25, seg = 14, radial = 
   return normalizeForMerge(geo);
 }
 
-/** A tube following an arbitrary polyline (hoses, pipes, handrails). */
-export function tubeAlong(points, radius = 0.03, radial = 8, closed = false, tension = 0.4) {
+/**
+ * A tube following an arbitrary polyline (hoses, pipes, handrails, bones).
+ * `stepMeters` controls the tessellation along the length — it dominates the
+ * triangle count, so long runs should ask for a coarse step.
+ */
+export function tubeAlong(points, radius = 0.03, radial = 8, closed = false, tension = 0.4, stepMeters = 0.18) {
   const pts = points.map((p) => (p.isVector3 ? p.clone() : new THREE.Vector3(p[0], p[1], p[2])));
   if (pts.length < 2) return cylinderMeters(radius, radius, 0.1, radial);
   const curve = new THREE.CatmullRomCurve3(pts, closed, 'catmullrom', tension);
   const len = curve.getLength();
-  const geo = new THREE.TubeGeometry(curve, Math.max(8, Math.ceil(len / 0.18)), radius, Math.max(3, radial), closed);
+  const seg = Math.max(6, Math.min(400, Math.ceil(len / Math.max(0.02, stepMeters))));
+  const geo = new THREE.TubeGeometry(curve, seg, radius, Math.max(3, radial), closed);
   scaleUV(geo, len, Math.PI * 2 * radius);
   return normalizeForMerge(geo);
 }

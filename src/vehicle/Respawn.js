@@ -26,7 +26,7 @@
 import * as THREE from 'three';
 import CONFIG from '../core/Config.js';
 import { clamp, clamp01 } from '../core/MathUtils.js';
-import { createRayHit } from '../physics/index.js';
+import { createRayHit, Layer } from '../physics/index.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Scratch
@@ -45,6 +45,9 @@ const _hit = createRayHit();
 const _tmp = new THREE.Vector3();
 const _back = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
+/** Search order for the respawn clearance walk — alternates up/down the line. */
+const BACK_FIRST = Object.freeze([-1, 1]);
+const FWD_FIRST = Object.freeze([1, -1]);
 
 const STATE_IDLE = 0;
 const STATE_FADE = 1;
@@ -71,6 +74,23 @@ export class Respawn {
     this.flipTime = 1.5;
     this.stuckLimit = 3.0;
     this.airLimit = 5.0;
+
+    /**
+     * Repeated-respawn escalation. "Never permanently stuck" is a hard
+     * requirement, and the way it used to break was subtle: if the resolved
+     * point is ITSELF blocked — inside a prop, under scenery, on top of another
+     * car — the car respawns, wedges, trips the 3 s stuck timer, and respawns to
+     * the same blocked point again, forever, with the player watching. Nothing
+     * throws and nothing logs; the race just ends.
+     *
+     * So count respawns inside a window and step further back along the racing
+     * line each time, which walks the car out of whatever it is stuck in.
+     */
+    this.repeatWindow = 12.0;      // s — respawns closer together than this stack
+    this.repeatBackoff = 1.8;      // m of extra set-back per repeat
+    this.maxBackoff = 12.0;        // m — stop walking backwards past this
+    /** Clearance a respawn point needs, as a multiple of the car's half-length. */
+    this.clearance = 1.15;
 
     this.fadeOut = 0.20;
     this.fadeIn = 0.30;
@@ -120,7 +140,11 @@ export class Respawn {
   _stateFor(car) {
     let st = this.states.get(car);
     if (!st) {
-      st = { state: STATE_IDLE, timer: 0, flipTimer: 0, reason: '', checkpoint: 0 };
+      st = {
+        state: STATE_IDLE, timer: 0, flipTimer: 0, reason: '', checkpoint: 0,
+        // Repeated-respawn escalation, see `repeatWindow`.
+        repeats: 0, sinceLast: Infinity, anchor: new THREE.Vector3(), hasAnchor: false,
+      };
       this.states.set(car, st);
     }
     return st;
@@ -158,6 +182,14 @@ export class Respawn {
       const car = cars[i];
       if (!car?.body) continue;
       const st = this._stateFor(car);
+      // Age the repeat counter. Survive a bad patch and the escalation resets.
+      if (st.sinceLast < 1e6) {
+        st.sinceLast += dt;
+        if (st.sinceLast > this.repeatWindow && st.repeats !== 0) {
+          st.repeats = 0;
+          st.sinceLast = Infinity;
+        }
+      }
 
       if (st.state === STATE_FADE) {
         st.timer -= dt;
@@ -222,7 +254,20 @@ export class Respawn {
 
   /** Place the car and start the settle phase. */
   _teleport(car, st) {
-    const ok = this.resolvePoint(car, st.checkpoint, _pos, _quat);
+    // A respawn inside the window means the last one did not work. Step further
+    // back along the line each time so we walk out of whatever is blocking it.
+    st.repeats = (st.sinceLast <= this.repeatWindow) ? st.repeats + 1 : 0;
+    st.sinceLast = 0;
+    if (st.repeats === 0) {
+      // First respawn of a series — anchor the escalation here. Without a fixed
+      // anchor the set-back re-projects from wherever the car ended up last
+      // time, so it wanders instead of walking steadily back up the line.
+      st.anchor.copy(car.body.position);
+      st.hasAnchor = true;
+    }
+    const backoff = Math.min(this.maxBackoff, st.repeats * this.repeatBackoff);
+    const ok = this.resolvePoint(car, st.checkpoint, _pos, _quat, backoff,
+      st.hasAnchor ? st.anchor : null);
     if (!ok) {
       // Nothing to go on — lift it in place and level it.
       _pos.copy(car.body.position);
@@ -270,7 +315,7 @@ export class Respawn {
    * @param {THREE.Quaternion} outQuat
    * @returns {boolean}
    */
-  resolvePoint(car, checkpointIndex, outPos, outQuat) {
+  resolvePoint(car, checkpointIndex, outPos, outQuat, backoff = 0, anchor = null) {
     const track = this.track;
     let refPos = null;
     let refQuat = null;
@@ -304,10 +349,11 @@ export class Respawn {
     // 3. the AI racing line — always available if there is a path
     const path = this.carSystem?.aiPath;
     if (path) {
-      const from = refPos ? _tmp.copy(refPos) : car.body.position;
+      const from = refPos ? _tmp.copy(refPos) : (anchor ?? car.body.position);
       const pr = path.projectGlobal(from);
-      // Back up slightly so the car does not immediately re-cross a checkpoint.
-      const s = pr.s - 0.18;
+      // Back up slightly so the car does not immediately re-cross a checkpoint,
+      // plus the escalation set-back if earlier respawns here did not take.
+      const s = pr.s - 0.18 - backoff;
       path.sampleAt(s, _origin, pr.index);
       path.tangentAt(s, _n, pr.index);
       if (!refPos) refPos = _origin;
@@ -348,6 +394,58 @@ export class Respawn {
     }
     outPos.addScaledVector(_n, car.def.comHeight + 0.012);
     levelQuaternion(_fwd, _n, outQuat);
+
+    // ── is the destination actually EMPTY? ──
+    // Finding a floor is not the same as finding room. Dropping the car onto a
+    // point already occupied by scenery or another car is what turns a respawn
+    // into a respawn-stuck-respawn loop. Nudge along the line until it is clear,
+    // and if nothing is, lift straight up — falling a short way onto the track
+    // is always recoverable, being interpenetrated is not.
+    if (!this._isClear(car, outPos)) {
+      const path = this.carSystem?.aiPath;
+      let freed = false;
+      if (path) {
+        const pr = path.projectGlobal(outPos);
+        // Walk BOTH ways along the line, nearest offset first, so a car blocked
+        // by something long (a fallen barrier lying down the track) still gets
+        // out without being sent half a lap backwards.
+        for (let k = 1; k <= 14 && !freed; k++) {
+          for (const dir of (k & 1) ? BACK_FIRST : FWD_FIRST) {
+            path.sampleAt(pr.s + dir * k * 0.8, _tmp, pr.index);
+            _tmp.addScaledVector(_n, car.def.comHeight + 0.012);
+            if (this._isClear(car, _tmp)) { outPos.copy(_tmp); freed = true; break; }
+          }
+        }
+      }
+      if (!freed) {
+        // Nothing along the line is free — drop in from above instead. A short
+        // fall onto the track always resolves; being interpenetrated does not.
+        outPos.addScaledVector(_n, Math.max(0.35, car.def.length));
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Is there room for `car` at `p`? Checks other cars and physics bodies, not
+   * the static mesh — the floor raycast already handled terrain, and what
+   * actually traps a respawn is a prop or a rival sitting on the spot.
+   *
+   * Uses `overlapSphere`, which is the cheap bounding-sphere test; a respawn
+   * happens a handful of times a race, so exactness is not worth a hull query.
+   * @param {import('./Car.js').Car} car @param {THREE.Vector3} p
+   */
+  _isClear(car, p) {
+    const physics = this.game?.physics;
+    if (!physics?.overlapSphere) return true;
+    const r = Math.max(0.06, car.def.hullHalf[2] * this.clearance);
+    this._overlap ??= [];
+    const n = physics.overlapSphere(p, r, this._overlap,
+      Layer.CAR | Layer.PROP | Layer.DEBRIS);
+    for (let i = 0; i < n; i++) {
+      // Our own body does not block us.
+      if (this._overlap[i] !== car.body) return false;
+    }
     return true;
   }
 

@@ -153,8 +153,11 @@ export class TrackSystem {
     this._elapsed = 0;
 
     if (CONFIG.debug) {
-      console.log(`[TrackSystem] "${track.id}" built in ${this.buildMs.toFixed(1)} ms`,
-        track.stats, `${track.lengthMeters?.toFixed(1)} m`);
+      console.log(
+        `[TrackSystem] "${track.id}" built in ${this.buildMs.toFixed(1)} ms · `
+        + `${track.lengthMeters?.toFixed(1)} m · flat-out ≈ ${track.estimatedLapSeconds?.toFixed(1)} s`,
+        track.stats,
+      );
     }
     return track;
   }

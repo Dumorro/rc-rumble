@@ -29,6 +29,26 @@ export function fin(v, fallback = 0) {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
 }
 
+const _warnedOnce = new Set();
+
+/**
+ * console.warn at most once per session for a given `key`.
+ *
+ * Audio degrades quietly by design — an unknown car class or a missing recipe
+ * falls back to something plausible rather than throwing. That is the right
+ * runtime behaviour and the wrong debugging behaviour, so every fallback that
+ * could mask a typo says so exactly once instead of once per frame.
+ *
+ * The key is deliberately separate from the message: a field of eight cars
+ * sharing one typo'd def should warn once about the typo, not once per car,
+ * so the key names the *mistake* while the message can name a car.
+ */
+export function warnOnce(key, msg = key) {
+  if (_warnedOnce.has(key)) return;
+  _warnedOnce.add(key);
+  console.warn(msg);
+}
+
 /**
  * Highest frequency we are allowed to write into a filter/oscillator param.
  * Some devices (and headless Chrome) run at 16 kHz; writing 20 kHz there makes

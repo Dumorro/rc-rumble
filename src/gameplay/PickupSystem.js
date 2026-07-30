@@ -515,6 +515,13 @@ export class PickupSystem {
    *   await GAME.pickups.selfTest({ visual: true })
    */
   async selfTest(opts) {
+    // Gated on DEV so Rollup drops the branch entirely in a production build —
+    // otherwise the test module is emitted as a (lazily fetched, but shipped)
+    // chunk in dist/. Use `npm run dev` to run it.
+    if (!import.meta.env?.DEV) {
+      console.warn('[Pickups] selfTest is only available in a dev build.');
+      return null;
+    }
     const m = await import('./__selftest__.js');
     return m.run(this.game, opts);
   }

@@ -316,15 +316,18 @@ export class CarSystem {
       const car = this.cars[i];
       car.launchLocked = this.launchLocked;
 
-      if (car.isPlayer) {
+      // The AI drives anything that has a brain and is not being driven by a
+      // human — which includes the player's car in attract / demo mode.
+      const autopilot = this.aiEnabled && car.aiDriver && (!car.isPlayer || car.autopilot);
+      if (autopilot) {
+        car.aiDriver.update(dt);
+      } else if (car.isPlayer) {
         if (input && !car.finished) {
           car.applyControl(input);
         } else if (car.finished) {
           // Post-finish: coast to a stop rather than freeze mid-corner.
           car.applyControl(COAST);
         }
-      } else if (this.aiEnabled && car.aiDriver) {
-        car.aiDriver.update(dt);
       }
 
       car.fixedUpdate(dt);
@@ -460,17 +463,21 @@ export class CarSystem {
     }
   }
 
-  /** Hand control of a car to the AI (used by the attract-mode camera). */
+  /**
+   * Hand a car to the AI — used by attract mode, the intro flyby and the
+   * post-finish cool-down lap. Safe to call on the player's car.
+   * @param {Car} car @param {boolean} on
+   */
   setAutopilot(car, on) {
     if (!car) return;
+    car.autopilot = !!on;
     if (on && !car.aiDriver) {
       const ai = new AIDriver(car, { seed: car.id * 104729 + 7 });
       ai.setPath(this.aiPath);
       ai.setShortcuts(this._track?.shortcuts ?? null);
       car.aiDriver = ai;
-    } else if (!on && car.aiDriver && car.isPlayer) {
-      car.aiDriver = null;
     }
+    if (!on && car.isPlayer) car.clearControl();
   }
 
   /** Total lateral grip currently available to a car — handy for the HUD. */

@@ -231,16 +231,24 @@ export class Car {
       linearDamping: 0.008,
       angularDamping: 0.10,
       allowSleep: false,
-      // Continuous collision. NOT optional at this scale: the chassis is only
-      // 48-92 mm thick depending on the car, and a fall reaches 16 m/s (133 mm
-      // per 120 Hz step) after 6.5 m at our 2g gravity — well within a museum
-      // shelf drop. Measured with ccd:false, a chassis hull dropped onto a thin
-      // platform passes clean through it from 16 m/s up, and through a thin
-      // wall from 20 m/s; with ccd:true both hold to 32 m/s. The engine only
-      // sweeps when the step motion exceeds 0.75*0.6*boundingRadius (~9.8 m/s
-      // for these hulls), so this costs one sphere-cast per car per step and
-      // only while genuinely fast.
-      ccd: true,
+      /**
+       * MUST stay off for a car. `PhysicsWorld._applyCCD` sweeps a sphere of
+       * `0.6 × boundingRadius` — 0.10 m for these hulls — from the body's
+       * PREVIOUS position. A car's centre of mass sits 21-72 mm above the
+       * road, so that sphere is *already* intersecting the floor before the
+       * sweep starts: it reports a hit at distance 0, the body is snapped back
+       * to `prevPosition`, and the car freezes solid at speed with its velocity
+       * intact. Observed exactly that — cars stopping dead at ~9.6 m/s and
+       * steering uselessly forever, with no error anywhere.
+       *
+       * Tunnelling is handled where it actually happens instead: the
+       * suspension lifts its cast origin by the frame's fall distance
+       * (`MAX_PREDICT_LIFT`), so the wheels catch a floor a whole step early,
+       * and the chassis hull is 96-336 mm long against a 0.083 m step at
+       * 10 m/s. If a genuinely thin platform ever needs protection, the fix is
+       * a swept-hull test, not this sphere.
+       */
+      ccd: false,
       userData: this,
       name: `car:${def.id}:${this.id}`,
     });
@@ -477,7 +485,7 @@ export class Car {
       if (over > 0) torqueScale *= 1 - clamp01(over);
     }
     this.drivetrain.update(dt, throttle, brake * mods.brake, handbrake,
-      this.launchLocked, torqueScale);
+      this.launchLocked, torqueScale, Math.max(1, mods.maxSpeed));
     this.rpm = this.drivetrain.rpm;
     this.gear = this.drivetrain.gear;
     this.engineLoad = this.drivetrain.engineLoad;
@@ -915,10 +923,22 @@ export class Car {
 
   // ═════════════════════════════════════════════════════════ misc
 
-  /** Peak load-normalised tyre saturation on an axle (AI / balance telemetry). */
+  /**
+   * How much of an axle's grip is being used, 0..1+.
+   *
+   * LOAD-WEIGHTED, deliberately. Taking the max across the pair looks simpler
+   * but is useless as a signal: the unloaded inside wheel in a corner has
+   * D → 0, so its `|F| / D` ratio blows past 1 while contributing no force at
+   * all, and anything reading this (the AI's understeer guard, throttle
+   * feathering) fires permanently on a car that is merely leaning.
+   */
   axleSaturation(front) {
     const a = front ? 0 : 2;
-    return Math.max(this.wheels[a].tire.saturation, this.wheels[a + 1].tire.saturation);
+    const w0 = this.wheels[a];
+    const w1 = this.wheels[a + 1];
+    const total = w0.load + w1.load;
+    if (total < 1e-3) return 0;
+    return (w0.tire.saturation * w0.load + w1.tire.saturation * w1.load) / total;
   }
 
   /** True while the car is drifting hard enough to matter for FX / scoring. */

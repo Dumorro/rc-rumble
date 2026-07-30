@@ -104,13 +104,11 @@ export class EffectsLayer {
     this.cars = [];
 
     // ── tuning ──────────────────────────────────────────────────────────
-    /**
-     * Extra forward acceleration while boosting, m/s². This is applied ON TOP
-     * of whatever the vehicle sim does with `effects.boost` / `effectMods`
-     * (Car.js currently multiplies drive torque by 1.85), so it is deliberately
-     * modest — it supplies the *shove*, the drivetrain supplies the *pull*.
-     */
-    this.boostAccel = 7.0;
+    // (There is no `boostAccel` any more. Boost's forward push is
+    // `DEF.boost.mods.torque` and is delivered by the vehicle sim through the
+    // contact patch, so it stays grip-limited. It used to ALSO be a direct body
+    // force applied here, which both double-counted the boost and bypassed the
+    // tyres entirely — turbo on ice accelerated like turbo on wood.)
     /** One-shot kick when a boost starts, m/s. */
     this.boostKick = 1.6;
     /** Fraction of boost thrust that still applies with no wheels down. */

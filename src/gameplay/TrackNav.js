@@ -28,6 +28,13 @@ const _p2 = new THREE.Vector3();
 const _t = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 
+/**
+ * A globally-found candidate must be this much closer (squared) than the one
+ * near the previous position before we accept the branch change. 0.36 = the
+ * new point has to be 40% nearer in real distance.
+ */
+const CONTINUITY_BIAS = 0.36;
+
 /** Wrap a value into [0,1). */
 export function wrap01(u) {
   u -= Math.floor(u);
@@ -292,6 +299,9 @@ export class TrackNav {
     const n = this.count;
     const pos = this.pos;
     let bestI = 0, bestSq = Infinity;
+    // Result of the hinted local scan, kept so a global rescan can be rejected
+    // if it only wants to hop to a *marginally* closer branch.
+    let localI = -1, localSq = Infinity;
 
     if (hintU >= 0) {
       const w = this.searchWindow;
@@ -305,6 +315,8 @@ export class TrackNav {
         if (d < bestSq) { bestSq = d; bestI = i; }
         if (++i >= n) i = 0;
       }
+      localI = bestI;
+      localSq = bestSq;
       // Local scan drifted too far from the line? Fall back to a global search.
       const localRadius = this.spacing * w;
       if (bestSq > localRadius * localRadius) bestSq = Infinity;
@@ -335,6 +347,18 @@ export class TrackNav {
         const d = dx * dx + dy * dy + dz * dz;
         if (d < bestSq) { bestSq = d; bestI = i; }
         if (++i >= n) i = 0;
+      }
+
+      // ── continuity preference ──
+      // Real tracks run over and beside themselves (a ramp above the start
+      // straight, a shelf that doubles back). A pure nearest-point query
+      // happily snaps to the branch a few centimetres closer, which teleports
+      // `u` to a completely different part of the lap and stalls progress. So
+      // a global candidate only wins if it is CLEARLY closer than where we
+      // already were — a genuine teleport still recovers, a near-tie does not.
+      if (localI >= 0 && bestSq > localSq * CONTINUITY_BIAS) {
+        bestI = localI;
+        bestSq = localSq;
       }
     }
 

@@ -313,27 +313,48 @@ const RAW = [
     blurb: 'Front-drive panel van. Heavy, tall, understeers — and shrugs off hits.',
     mass: 2.05,
     length: 0.312, width: 0.184, height: 0.140,
-    wheelbase: 0.210, trackWidth: 0.152,
+    wheelbase: 0.210, trackWidth: 0.158,
     hullHalf: [0.085, 0.046, 0.150], hullCenterY: 0.026,
-    comHeight: 0.052,
+    comHeight: 0.046,
     topSpeed: 8.15,
-    accel: 9.59,
+    /**
+     * Deliberately the weakest launch in the field. On a front-driver the SAME
+     * two tyres have to make the thrust and turn the car, and with 60 % of a
+     * 2 kg van on the nose the front axle can only put down ~16 N. Asking for
+     * more than that just pins the fronts in wheelspin, which costs all of
+     * their lateral grip — the van then understeers straight on at any throttle
+     * opening. Under-torquing it makes it a slow, planted, shove-happy van
+     * instead of an undriveable one.
+     */
+    accel: 9.10,
     drive: 'fwd',
-    diff: 'open',
+    diff: 'lsd', diffLock: 0.45,
     chassis: 'metal',
-    weightFront: 0.60,
-    inertiaScale: [1.20, 1.35, 1.20],
+    /**
+     * Nose-heavy and deliberately understeering: front-biased roll stiffness
+     * and MORE rear grip than front. A tall van that oversteers is unrecoverable
+     * — its yaw inertia means a slide becomes a spin becomes a stop — so the
+     * balance is set so the front lets go first, every time.
+     */
+    weightFront: 0.600,
+    inertiaScale: [1.18, 1.16, 1.14],
     brakeTorque: 1.22, brakeBiasFront: 0.68,
-    steerMax: 0.480, steerMaxFast: 0.200,
+    steerMax: 0.500, steerMaxFast: 0.215,
     counterSteerAssist: 0.0095,
     susp: {
-      travel: 0.042, frequency: 4.95, frequencyRear: 5.35,
+      travel: 0.042, frequency: 5.25, frequencyRear: 5.15,
       bumpRatio: 0.40, reboundRatio: 0.60,
-      arbFront: 0.40, arbRear: 0.16,
+      // A tall front-drive van understeers on its own; a stiff front bar on top
+      // of that just makes the inside front wheel useless. Keep the bar modest
+      // and let the (deliberately) lower rear grip do the balancing.
+      arbFront: 0.36, arbRear: 0.15,
       forceLift: 0.26,
     },
-    tyre: { grip: 1.02, gripRear: 0.99, width: 0.026, peakSlipAngle: 0.155 },
-    aero: { lateralDrag: 4.1, downforce: 0.18, airPitch: 0.0195, selfLevel: 0.0115 },
+    tyre: { grip: 1.14, gripRear: 1.24, width: 0.030, peakSlipAngle: 0.180, relaxLat: 0.105 },
+    aero: {
+      lateralDrag: 4.1, downforce: 0.14, downforceZ: 0.012,
+      airPitch: 0.0195, selfLevel: 0.0115,
+    },
     colorPrimary: 0xf4f6f8, colorSecondary: 0x2b6cb0, colorAccent: 0xc9ced6,
     antennaColor: 0xff7a1a,
     visualRollGain: 0.75, visualPitchGain: 0.60,

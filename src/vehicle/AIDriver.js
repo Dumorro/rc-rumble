@@ -70,8 +70,18 @@ const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 /** Reference lateral acceleration the shared speed profile is solved for. */
 const REF_LAT_ACCEL = 20.5;   // m/s² (≈ μ 1.05 at 2 g)
-/** Reference braking deceleration for the backward pass. */
-const REF_BRAKE_ACCEL = 8.2;  // m/s²
+/**
+ * Reference braking deceleration for the backward pass, on a grip-1.00 surface.
+ *
+ * Measured, not guessed: a toyeca at full pedal stops from 8.7 m/s in 0.54 s on
+ * wood, which is 16.1 m/s². 14.9 is that with a little margin for a car that is
+ * not perfectly settled. It used to be 8.2, which made every AI start braking
+ * 1.8x further out than it needed to and read as "the CPU is just slow".
+ *
+ * This is the WOOD figure. It must be scaled by the surface the car is actually
+ * on before it is used — see `_brakeAccelFor`.
+ */
+const REF_BRAKE_ACCEL = 14.9;  // m/s² on grip 1.00
 /** Curvature (1/m) that counts as "a proper corner" for line/offset purposes. */
 const CORNER_K = 0.55;
 
@@ -262,19 +272,38 @@ export class AIPath {
     return best;
   }
 
+  /** Signed shortest arc distance from `a` to `b`, wrapped to ±total/2. */
+  arcDelta(a, b) {
+    if (!this.closed) return b - a;
+    let d = (b - a) % this.total;
+    if (d > this.total * 0.5) d -= this.total;
+    if (d < -this.total * 0.5) d += this.total;
+    return d;
+  }
+
   /**
-   * Arclength of the point on the path closest to `pos`, searched around a hint
-   * so it is cheap and never jumps to the far side of a hairpin.
+   * Arclength of the point on the path closest to `pos`.
+   *
+   * Searched in a window around a hint, biased FORWARD, with a continuity
+   * penalty against the previous arclength. Both matter on a real track: a
+   * hairpin brings two parts of the centreline within a car's width of each
+   * other, and a plain nearest-point search will happily snap across the gap,
+   * teleporting the driver's progress and (worse) its steering target to the
+   * other side of the corner.
+   *
    * @param {THREE.Vector3} pos
    * @param {number} hintIndex
-   * @param {number} [span] nodes to search either side of the hint
+   * @param {number} [span] nodes to search ahead of the hint
+   * @param {number} [prevS] last known arclength, for the continuity penalty
    */
-  projectNear(pos, hintIndex, span = 14) {
+  projectNear(pos, hintIndex, span = 14, prevS = null) {
     const n = this.count;
+    const back = Math.max(2, Math.round(span * 0.35));
     let bestS = this.s[hintIndex];
+    let bestScore = Infinity;
     let bestD = Infinity;
     let bestI = hintIndex;
-    for (let o = -span; o <= span; o++) {
+    for (let o = -back; o <= span; o++) {
       let i = hintIndex + o;
       if (this.closed) i = ((i % n) + n) % n;
       else if (i < 0 || i >= n) continue;
@@ -289,7 +318,13 @@ export class AIPath {
       const cy = ay + ey * t - pos.y;
       const cz = az + ez * t - pos.z;
       const d = cx * cx + cy * cy + cz * cz;
-      if (d < bestD) { bestD = d; bestS = this.s[i] + this.seg[i] * t; bestI = i; }
+      const sHere = this.s[i] + this.seg[i] * t;
+      let score = d;
+      if (prevS !== null) {
+        const jump = this.arcDelta(prevS, sHere);
+        score += jump * jump * 0.05;
+      }
+      if (score < bestScore) { bestScore = score; bestD = d; bestS = sHere; bestI = i; }
     }
     // Reuse the result object — this runs once per AI per fixed step.
     const out = this._proj;
@@ -399,6 +434,7 @@ export class AIDriver {
     // ── state ─────────────────────────────────────────────────────────
     this.pathIndex = 0;
     this.pathS = 0;
+    this._hasS = false;
     this.lapsSeen = 0;
     this.lateralOffset = 0;
     this.headingError = 0;
@@ -452,6 +488,7 @@ export class AIDriver {
       this.pathIndex = pr.index;
       this.pathS = pr.s;
       this.pathProgress = pr.s;
+      this._hasS = true;
     }
   }
 
@@ -472,6 +509,7 @@ export class AIDriver {
       this.pathIndex = pr.index;
       this.pathS = pr.s;
       this.pathProgress = pr.s;
+      this._hasS = true;
     }
   }
 
@@ -524,7 +562,8 @@ export class AIDriver {
     body.getUp(_up);
 
     // ── 1. where am I on the path? ─────────────────────────────────────
-    const pr = path.projectNear(body.position, this.pathIndex, 16);
+    const pr = path.projectNear(body.position, this.pathIndex, 16, this._hasS ? this.pathS : null);
+    this._hasS = true;
     // Track progress monotonically (used for rubber-banding).
     const dS = pr.s - this.pathS;
     // Seam crossings. Do NOT clamp the lap count at zero: a car spun backwards
@@ -609,15 +648,41 @@ export class AIDriver {
     const lock = lerp(def.steerMax, def.steerMaxFast, st * st * 0.85 + st * 0.15);
 
     let angleCmd = e * this.kp + this._errRate * this.kd;
-    // Counter-steer: catch the slide instead of spinning with it.
-    angleCmd += car.slipAngle * this.slipComp;
-    angleCmd -= car.yawRate * this.yawDamp;
+    // Counter-steer: catch the slide instead of spinning with it. Faded in with
+    // speed — below walking pace the chassis slip angle is mostly noise, and
+    // reacting to it just piles on lock and scrubs the car to a standstill.
+    const slipAuth = clamp01((absSpeed - 1.4) / 3.0);
+    angleCmd += clamp(car.slipAngle, -0.7, 0.7) * this.slipComp * slipAuth;
+    angleCmd -= car.yawRate * this.yawDamp * slipAuth;
+    // Cap the command at the largest steering angle that still does something.
+    // Past α_peak the front tyres give LESS force, so extra lock only scrubs
+    // speed and pushes the car wider — which grows the line error, which asks
+    // for more lock. Heavy cars fall into that loop and crawl round at half
+    // pace. The useful ceiling is the kinematic demand plus one peak slip angle.
+    const aFront = Math.abs(car.def.axleZFront);
+    const kinematic = Math.abs(car.slipAngle)
+      + (aFront * Math.abs(car.yawRate)) / Math.max(1.2, absSpeed);
+    // A front-driven car has to keep something in reserve: the SAME tyres make
+    // the thrust, so once they are at their lateral peak the friction ellipse
+    // leaves no longitudinal force at all and the car simply stops accelerating
+    // mid-corner. Hold the fronts just under the peak instead of just over it.
+    const peakMargin = car.def.drive === 'fwd' ? 0.80 : 1.35;
+    const maxUseful = kinematic + car.def.tyre.peakSlipAngle * peakMargin;
+    angleCmd = clamp(angleCmd, -maxUseful, maxUseful);
+
     let steer = clamp(angleCmd / Math.max(0.05, lock), -1, 1);
 
     // ── 5. speed target ───────────────────────────────────────────────
     // Scale the shared profile by this car's actual grip and this driver's nerve.
     const gripScale = Math.sqrt(clamp(car.lateralGripLimit() / REF_LAT_ACCEL, 0.25, 2.2));
-    const horizon = 0.35 + absSpeed * absSpeed / (2 * REF_BRAKE_ACCEL * this.brakeMult);
+    // The braking HORIZON has to use the same surface grip the corner target
+    // does. It used to be a fixed wood-grip figure while the target was already
+    // grip-scaled, so on ice the AI correctly dropped its corner speed to 42%
+    // and then planned a braking distance it could not achieve — it needed 2.2x
+    // what it allowed itself and sailed straight through the corner. Broken on
+    // grass, dirt, gravel, ice and oil; five of our sixteen surfaces.
+    const brakeAccel = this._brakeAccelFor(car);
+    const horizon = 0.35 + absSpeed * absSpeed / (2 * brakeAccel * this.brakeMult);
     const limit = path.minLimitAhead(pr.s, horizon, pr.index);
     let target = limit * gripScale * this.cornerMult * this._rubberBand();
     target = Math.min(target, def.topSpeed * 1.06) * effort;
@@ -642,9 +707,28 @@ export class AIDriver {
     if (throttle > 0 && car.wheelsOnGround >= 2) {
       const rear = car.axleSaturation(false);
       if (rear > 0.98) throttle *= lerp(1, 0.55, clamp01((rear - 0.98) / 0.30));
-      // And do not add power while the car is still pointing the wrong way.
+      // And do not add power while the car is still pointing the wrong way. A
+      // big slip angle is a spin in progress: keeping the throttle in holds the
+      // car sideways, and on a heavy car that turns one slide into a full stop.
       const slip = Math.abs(car.slipAngle);
       if (slip > 0.28) throttle *= lerp(1, 0.42, clamp01((slip - 0.28) / 0.40));
+      if (slip > 0.60) throttle *= lerp(1, 0.35, clamp01((slip - 0.60) / 0.45));
+    }
+
+    // ── understeer guard ───────────────────────────────────────────────
+    // Once the front tyres are past their peak, MORE lock buys nothing and
+    // costs everything: it scrubs speed and holds the fronts in the sliding
+    // part of the curve. Unwind the steering and (on a front-driven car) lift,
+    // which is exactly what a real driver does to get the nose back.
+    if (car.wheelsOnGround >= 2) {
+      const front = car.axleSaturation(true);
+      if (front > 1.0) {
+        const over = clamp01((front - 1.0) / 0.45);
+        steer *= lerp(1, 0.62, over);
+        if (car.def.drive === 'fwd' || car.def.drive === '4wd') {
+          throttle *= lerp(1, 0.72, over);
+        }
+      }
     }
 
     // ── 6. handbrake for genuine hairpins ─────────────────────────────
@@ -913,6 +997,21 @@ export class AIDriver {
       }
     }
     this.avoidBias = damp(this.avoidBias, clamp(bias, -1.1, 1.1), 7, dt);
+  }
+
+  /**
+   * Braking deceleration this car can actually achieve right now, m/s².
+   *
+   * `REF_BRAKE_ACCEL` is the grip-1.00 figure; braking is friction-limited, so
+   * it scales with the surface under the wheels exactly as the cornering limit
+   * does. `lateralGripLimit()` already averages mu over the loaded wheels and
+   * multiplies by gravity, so the ratio against REF_LAT_ACCEL is the surface
+   * grip factor. Floored so a car briefly airborne or on oil still plans a
+   * finite stopping distance instead of a horizon that runs away to infinity.
+   */
+  _brakeAccelFor(car) {
+    const g = clamp(car.lateralGripLimit() / REF_LAT_ACCEL, 0.12, 1.6);
+    return REF_BRAKE_ACCEL * g;
   }
 
   /**

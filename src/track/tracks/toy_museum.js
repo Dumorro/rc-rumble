@@ -22,7 +22,7 @@
  * dominoes, entered off a fast straight with a hard right and exited blind into
  * the hairpin. Worth roughly a second if you nail it; costs three if you don't.
  *
- * Lap ≈ 315 m ⇒ ~55–60 s.
+ * Lap ≈ 345 m; a flat-out AI lap is ~45 s, a contested race lap 50–60 s.
  */
 
 import * as THREE from 'three';
@@ -76,17 +76,25 @@ const NODES = [
   [37, 0.70, 23, 2.8],    // 21
   [33, 0.70, 24.5, 3.0],  // 22 ← top of the marble stairs
   [30.2, 0, 24.5, 3.0],   // 23 ← bottom
-  [25, 0, 26, 2.8],       // 24
-  [17, 0, 26.5, 2.8],     // 25
-  [10, 0, 26, 2.6],       // 26 ← service-corridor entrance (curtain, to the south)
-  [2, 0, 20, 2.6],        // 27
-  [-5, 0, 14, 2.6],       // 28
-  [-13, 0, 10, 2.6],      // 29
-  [-23, 0, 10, 2.6],      // 30
-  [-31, 0, 14, 2.8],      // 31
-  [-35, 0, 21, 3.2],      // 32
-  [-42, 0, 29, 4.4],      // 33 ← hairpin
-  [-42.5, 0, 22, 3.6],    // 34
+  // ── a full anticlockwise lap of the Rocket Hall around the plinth ──
+  [31, 0, 18.5, 2.8],     // 24
+  [30, 0, 11, 2.8],       // 25
+  [27, 0, 5.5, 2.6],      // 26
+  [20, 0, 5.2, 2.6],      // 27
+  [13, 0, 7.5, 2.6],      // 28
+  [9, 0, 13, 2.6],        // 29
+  [10, 0, 20, 2.6],       // 30
+  [10, 0, 26, 2.6],       // 31 ← service-corridor entrance (curtain, to the south)
+  // ── deep through the Grand Hall and back to the hairpin ──
+  [2, 0, 20, 2.6],        // 32
+  [-5, 0, 13, 2.6],       // 33
+  [-11, 0, 4, 2.6],       // 34
+  [-20, 0, 0, 2.6],       // 35
+  [-29, 0, 3, 2.6],       // 36
+  [-33.5, 0, 11, 2.8],    // 37
+  [-35, 0, 20, 3.2],      // 38
+  [-42, 0, 29, 4.4],      // 39 ← hairpin
+  [-42.5, 0, 22, 3.6],    // 40
 ];
 
 export default {
@@ -282,7 +290,7 @@ function buildRoad(b) {
   });
   // A second runner across the return leg through the Grand Hall.
   b.stripe({
-    from: b.tNear([-13, 0, 10]), to: b.tNear([-31, 0, 14]),
+    from: b.tNear([-11, 0, 4]), to: b.tNear([-29, 0, 3]),
     width: 1.7, offset: 0.5, y: 0.010, bevel: 0.09,
     material: 'carpet/loop_pile', surfaceId: SurfaceId.CARPET,
     matOpts: { params: { color: 0x7d3a20, loops: 48 } },
@@ -647,12 +655,12 @@ function buildRocketHall(b) {
   const R = ROCKET;
   // Plinth.
   const plinth = G.latheMeters([
-    [4.4, 0], [4.5, 0.08], [4.3, R.plinth - 0.06], [4.2, R.plinth], [0, R.plinth],
-  ], 26);
+    [4.0, 0], [4.1, 0.08], [3.9, R.plinth - 0.06], [3.8, R.plinth], [0, R.plinth],
+  ], 24);
   b.addAt(plinth, b.mat('concrete/screed', { color: 0xd9d2c2 }), [R.x, 0, R.z], null, 1,
     { surfaceId: SurfaceId.CONCRETE });
   plinth.dispose();
-  b.blocker([R.x, R.plinth, R.z], [3.4, 6.0, 3.4], { round: true, surfaceId: SurfaceId.METAL });
+  b.blocker([R.x, R.plinth, R.z], [3.0, 6.0, 3.0], { round: true, surfaceId: SurfaceId.METAL });
 
   b.prop('rocket', {
     position: [R.x, R.plinth, R.z], height: R.height, radius: R.radius,
@@ -663,16 +671,16 @@ function buildRocketHall(b) {
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2;
     b.prop('stanchion', {
-      position: [R.x + Math.cos(a) * 5.4, 0, R.z + Math.sin(a) * 5.4], instanced: true,
+      position: [R.x + Math.cos(a) * 4.9, 0, R.z + Math.sin(a) * 4.9], instanced: true,
     });
     const a2 = ((i + 1) / 8) * Math.PI * 2;
     ropeBetween(b,
-      [R.x + Math.cos(a) * 5.4, 0.47, R.z + Math.sin(a) * 5.4],
-      [R.x + Math.cos(a2) * 5.4, 0.47, R.z + Math.sin(a2) * 5.4]);
+      [R.x + Math.cos(a) * 4.9, 0.47, R.z + Math.sin(a) * 4.9],
+      [R.x + Math.cos(a2) * 4.9, 0.47, R.z + Math.sin(a2) * 4.9]);
   }
 
   b.prop('picture_frame', {
-    position: [R.x - 5.6, 1.2, R.z + 2.4], rotation: [0, -0.5, 0],
+    position: [R.x - 5.2, 1.2, R.z + 2.0], rotation: [0, -0.5, 0],
     width: 1.8, height: 1.0,
     text: ['ORBITER MK II', 'FLIGHT READY 1971'],
     background: '#1e2c44', textColor: '#e8dcc0',
@@ -682,13 +690,12 @@ function buildRocketHall(b) {
   // real kinematic obstacle that will shove a car sideways if you meet it.
   buildTrain(b, {
     points: [
-      [14, 0, 13], [14.5, 0, 24], [13.5, 0, 30.6], [20, 0, 30.8],
-      [20.5, 0, 23], [24, 0, 16], [18, 0, 11.5],
+      [3, 0, 9], [3, 0, 23], [16, 0, 25], [21, 0, 20], [16, 0, 11], [9, 0, 8],
     ],
     speed: 2.4, gauge: 0.30, y: 0.004, color: 0x1f6b34, wagons: 2, kinematic: true,
   });
   b.prop('picture_frame', {
-    position: [17.2, 1.0, 12.0], rotation: [0, 0.2, 0],
+    position: [6.2, 1.0, 17.0], rotation: [0, 1.3, 0],
     width: 1.1, height: 0.5, text: 'MIND THE TRAIN',
     background: '#8e6a1f', textColor: '#20180a',
   });
@@ -702,12 +709,12 @@ function buildRocketHall(b) {
       return g;
     }),
   ]);
-  for (const [x, z, ry] of [[8, 8, 0], [36, 6, Math.PI / 2], [14, 4.6, 0]]) {
+  for (const [x, z, ry] of [[6.5, 10.5, 0], [36, 6, Math.PI / 2], [16, 1.2, 0]]) {
     b.instanceAt('museum:bench', bench, b.mat('wood/oak_planks'), [x, 0, z], [0, ry, 0], 1,
       { collide: 'box', surfaceId: SurfaceId.WOOD });
   }
   bench.dispose();
-  b.prop('plant_pot', { position: [10.5, 0, 5.0], radius: 0.34, height: 0.42, color: 0x9a5a34 });
+  b.prop('plant_pot', { position: [8.6, 0, 4.6], radius: 0.34, height: 0.42, color: 0x9a5a34 });
   b.prop('plant_pot', { position: [34.0, 0, 4.6], radius: 0.30, height: 0.38, color: 0x8d5230 });
 
   // A giant chess set on the lino, right on the inside of the last corner
@@ -715,15 +722,15 @@ function buildRocketHall(b) {
   const pieces = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
   for (let i = 0; i < 8; i++) {
     b.prop('chess', {
-      position: [5.75 + i * 0.56, 0, 14.0], piece: pieces[i], white: true, scale: 1.6,
+      position: [-15.75 + i * 0.56, 0, -21.7], piece: pieces[i], white: true, scale: 1.6,
     });
     b.prop('chess', {
-      position: [5.75 + i * 0.56, 0, 17.3], piece: 'pawn', white: false, scale: 1.6,
+      position: [-15.75 + i * 0.56, 0, -18.4], piece: 'pawn', white: false, scale: 1.6,
     });
   }
   // One 4.6 m board tile, not a mosaic of them: the material repeat is forced.
   b.floor({
-    center: [7.5, 15.65], size: [4.6, 4.6], y: 0.004,
+    center: [-14, -20.05], size: [4.6, 4.6], y: 0.004,
     material: 'toy/board_game', matOpts: { repeat: 1 / 4.6 },
     surfaceId: null, collide: false, decor: true,
   });
@@ -752,10 +759,10 @@ function buildGrandHall(b) {
 
   // A barrier of display cases between the two parallel straights, so the
   // hairpin reads as a hairpin.
-  for (let i = 0; i < 6; i++) {
-    const z = 16 - i * 5.2;
+  for (let i = 0; i < 5; i++) {
+    const z = 11 - i * 5.2;
     b.prop('display_case', {
-      position: [-36.4, 0, z], rotation: [0, Math.PI / 2, 0],
+      position: [-36.9, 0, z], rotation: [0, Math.PI / 2, 0],
       width: 3.0, depth: 1.1, plinthHeight: 0.62, glassHeight: 0.9,
       plinthColor: 0x63492c,
     });
@@ -787,19 +794,19 @@ function buildGrandHall(b) {
 
   // Big woven rug in the middle of the return leg + a scatter of toys on it.
   b.floor({
-    center: [-18, 10], size: [9, 5], y: 0.006,
+    center: [-15.5, 2], size: [9, 5], y: 0.006,
     material: 'carpet/rug_woven', surfaceId: SurfaceId.CARPET,
   });
   for (let i = 0; i < 7; i++) {
     b.prop('block', {
-      position: [-20.5 + i * 0.34, 0.02 + (i % 3) * 0.11, 8.6 + Math.sin(i) * 0.5],
+      position: [-18.0 + i * 0.34, 0.02 + (i % 3) * 0.11, 0.6 + Math.sin(i) * 0.5],
       rotation: [0, i * 0.6, 0],
       color: [0xd01012, 0x1f6bd0, 0xe8c033, 0x2f9a4a][i % 4],
       width: 0.16, height: 0.10, depth: 0.32,
     });
   }
-  b.prop('ball', { position: [-15.0, 0.17, 11.5], radius: 0.17, color: 0xe0483c });
-  b.prop('ball', { position: [-25.5, 0.13, 12.6], radius: 0.13, color: 0x2f7fd0 });
+  b.prop('ball', { position: [-12.5, 0.17, 3.5], radius: 0.17, color: 0xe0483c });
+  b.prop('ball', { position: [-23.0, 0.13, 4.6], radius: 0.13, color: 0x2f7fd0 });
 
   // A grandfather clock with a swinging pendulum, in the corner of the hairpin.
   const clockBody = G.mergeList([
@@ -977,21 +984,22 @@ function makeDotTexture(assets) {
 // ═════════════════════════════════════════════════════════════ race layout
 
 function buildRaceData(b) {
-  b.checkpoints({ count: 18, halfWidthPad: 1.6 });
+  b.checkpoints({ count: 20, halfWidthPad: 1.6 });
   b.startGrid({ count: 8, columns: 2, rowGap: 2.1, firstBack: 3.6, spread: 0.42 });
   b.respawns({ spacing: 12 });
 
   b.pickupRow(b.spline.wrapT(b.tNear([-40, 0, -6])), { count: 3, spread: 1.0 });
   b.pickupRow(b.tNear([-24, 0, -28]), { count: 3, spread: 0.9 });
+  b.pickupRow(b.tNear([27, 0, 5.5]), { count: 3, spread: 0.8 });
   b.pickupRow(b.tNear([12, 0, -14]), { count: 3, spread: 0.8 });
   b.pickupRow(b.tNear([43, 0, -16]), { count: 3, spread: 0.9 });
   b.pickupRow(b.tNear([43, 0.70, 12]), { count: 3, spread: 1.0, y: 0.014 });
-  b.pickupRow(b.tNear([20, 0, 26.4]), { count: 3, spread: 0.9 });
-  b.pickupRow(b.tNear([-18, 0, 10]), { count: 3, spread: 0.9 });
+  b.pickupRow(b.tNear([10, 0, 21]), { count: 3, spread: 0.9 });
+  b.pickupRow(b.tNear([-20, 0, 0]), { count: 3, spread: 0.9 });
 
   b.aiPath({
     spacing: 3.0, topSpeed: 9.0, brake: 12.5, accel: 6.8,
-    tyre: 1.05, safety: 0.90, raceLine: true, carHalfWidth: 0.13,
+    tyre: 0.58, safety: 0.90, raceLine: true, carHalfWidth: 0.13,
   });
 }
 

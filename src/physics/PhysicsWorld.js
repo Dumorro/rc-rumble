@@ -775,15 +775,40 @@ export class PhysicsWorld {
 
   // ═════════════════════════════════════════════════════════ CCD
 
-  /** Sphere-cast the frame's motion against the statics and clamp. */
+  /**
+   * Sphere-cast the frame's motion against the statics and clamp.
+   *
+   * Two things here are load-bearing and were both wrong before, in a way that
+   * froze cars solid with no error anywhere:
+   *
+   * 1. THE SWEEP SPHERE MUST FIT INSIDE THE SHAPE. It used to be
+   *    0.6 * boundingRadius, which for a car hull is ~0.10 m against a chassis
+   *    only 0.024 m in its thinnest half-extent. A car at ride height therefore
+   *    started every sweep with the sphere already buried in the floor.
+   * 2. A HIT AT DISTANCE ~0 MEANS "ALREADY TOUCHING", NOT "STOP HERE". With the
+   *    oversized sphere the cast returned distance ≈ 0 every step, so `back`
+   *    was ≈ 0 and the body was snapped straight back to `prevPosition` — speed
+   *    stayed at 9.6 m/s while the position never changed. Measured: 3 of the 8
+   *    cars (needle, wedge, phantom — the ones whose top speed clears the old
+   *    trigger) locked up for 758 of 1200 steps.
+   *
+   * So: size the sphere from the smallest half-extent, and treat a zero-distance
+   * hit as "the discrete solver already owns this contact" and bail.
+   */
   _applyCCD(b) {
     _v1.copy(b.position).sub(b.prevPosition);
     const dist = _v1.length();
-    const r = Math.max(0.004, b.boundingRadius * 0.6);
-    if (dist < r * 0.75) return;
+    const r = ccdRadius(b);
+    // Moving less than the sweep sphere cannot tunnel; discrete handles it.
+    if (dist <= r) return;
     _v1.multiplyScalar(1 / dist);
     if (!this._sphereCastStatic(b.prevPosition, _v1, r, dist, _hitScratch2)) return;
+    // Already in contact at t = 0 — nothing to clamp, and clamping would pin
+    // the body in place forever.
+    if (_hitScratch2.distance <= r * 0.5) return;
     const back = Math.max(0, _hitScratch2.distance - 1e-3);
+    // Never move the body BACKWARDS past where it started the step.
+    if (back >= dist) return;
     b.position.copy(b.prevPosition).addScaledVector(_v1, back);
     // Kill the into-surface component so the next step resolves normally.
     const vn = b.velocity.dot(_hitScratch2.normal);
@@ -1092,6 +1117,22 @@ export class PhysicsWorld {
 // ═════════════════════════════════════════════════════════ helpers
 
 function clampF(v, a, b) { return v < a ? a : v > b ? b : v; }
+
+/**
+ * Radius of the CCD sweep sphere: it must FIT INSIDE the collider, or the sweep
+ * starts already intersecting whatever the body is resting on. The smallest
+ * half-extent is the largest sphere guaranteed to sit within the shape; 0.8 of
+ * it keeps a margin for rotation.
+ */
+function ccdRadius(b) {
+  const c = b.collider;
+  if (!c) return 0.004;
+  if (c.type === ShapeType.SPHERE) return Math.max(0.004, c.radius * 0.8);
+  const lo = c.localMin, hi = c.localMax;
+  if (!lo || !hi) return Math.max(0.004, b.boundingRadius * 0.25);
+  const h = Math.min(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) * 0.5;
+  return Math.max(0.004, h * 0.8);
+}
 
 function isSleepy(b, cfg) {
   if (!b.isMovable) return true;

@@ -144,7 +144,18 @@ export class Drivetrain {
    * @param {boolean} launchLocked true during the countdown — rev but do not move
    * @param {number} [torqueScale] gameplay multiplier (boost, electro-shock…)
    */
-  update(dt, throttle, brake, handbrake, launchLocked = false, torqueScale = 1) {
+  /**
+   * @param {number} [revScale] `max(1, effectMods.maxSpeed)` — raises the
+   *        effective redline so a speed BUFF actually raises top speed. Top
+   *        speed here is set by gearing and the rev limiter, not by the drag
+   *        balance, so extra torque alone cannot exceed it: boost was 41%
+   *        quicker to 7 m/s but topped out at 8.65 vs 8.66 m/s. Scaling the
+   *        limiter (and rpmFrac with it, so shift points and the torque curve
+   *        keep their shape) is what makes "turbo makes you FASTER, not just
+   *        quicker" true. Debuffs do NOT come through here — a cap has to bite
+   *        even downhill, so those stay on the torque governor in Car.js.
+   */
+  update(dt, throttle, brake, handbrake, launchLocked = false, torqueScale = 1, revScale = 1) {
     const car = this.car;
     const d = this.def;
     const wheels = car.wheels;
@@ -207,14 +218,16 @@ export class Drivetrain {
     let targetOmega = Math.max(this.idleOmega, shaftOmega);
     if (launchLocked) {
       // Countdown: the wheels are held, so the engine tracks the pedal.
-      targetOmega = lerp(this.idleOmega, this.redlineOmega * 0.74, clamp01(throttle));
+      targetOmega = lerp(this.idleOmega, this.redlineOmega * revScale * 0.74, clamp01(throttle));
     }
     // A little inertia so the needle does not teleport (audio cares).
     const follow = clamp01(dt * (targetOmega > this.engineOmega ? 48 : 18));
     this.engineOmega += (targetOmega - this.engineOmega) * follow;
-    this.engineOmega = clamp(this.engineOmega, this.idleOmega * 0.85, this.limiterOmega * 1.12);
+    this.engineOmega = clamp(this.engineOmega, this.idleOmega * 0.85, this.limiterOmega * revScale * 1.12);
     this.rpm = this.engineOmega * RAD_TO_RPM;
-    const rpmFrac = this.engineOmega / this.redlineOmega;
+    // Normalised against the SCALED redline so shift points and the torque
+    // curve keep their shape when the limiter is raised.
+    const rpmFrac = this.engineOmega / (this.redlineOmega * revScale);
 
     // ── 4. automatic gearbox ───────────────────────────────────────────
     if (this.shiftTimer > 0) {
@@ -231,8 +244,9 @@ export class Drivetrain {
     }
 
     // ── 5. rev limiter ─────────────────────────────────────────────────
-    if (this.engineOmega >= this.limiterOmega) this.limiterActive = true;
-    else if (this.engineOmega < this.limiterOmega * 0.994) this.limiterActive = false;
+    const limitOmega = this.limiterOmega * revScale;
+    if (this.engineOmega >= limitOmega) this.limiterActive = true;
+    else if (this.engineOmega < limitOmega * 0.994) this.limiterActive = false;
     this.limiterPhase = this.limiterActive ? (this.limiterPhase + dt * 42) % 1 : 0;
 
     // ── 6. engine torque ───────────────────────────────────────────────

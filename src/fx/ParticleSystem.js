@@ -716,17 +716,6 @@ export class ParticleSystem {
      * full of stale content for one frame.
      */
     this._softStable = 0;
-    /**
-     * Ask PostFX to keep its linear-depth pass alive for us. PostFX only runs
-     * the resolve when AO, motion blur or DOF want it — and at 'low' and
-     * 'medium' none of them do, which would lose the soft-particle fade on
-     * exactly the hardware where dust sits closest to the floor and hard
-     * intersections are most obvious. The pass is one full-screen R16F blit
-     * (~0.2 ms at 900p); we ask for it from 'medium' up, and we stop asking the
-     * moment the renderer's adaptive governor starts shedding quality.
-     * Set to false to leave PostFX entirely alone.
-     */
-    this.requestDepthPass = CONFIG.quality !== 'low';
     this._resolution = new THREE.Vector2(1920, 1080);
     this._unsubResize = null;
 
@@ -1009,17 +998,21 @@ export class ParticleSystem {
     this.stats.simMs = this.stats.simMs * 0.88 + (performance.now() - t0) * 0.12;
   }
 
+  /**
+   * Point the soft-particle sampler at the render system's linear-depth buffer,
+   * if one is being produced this frame.
+   *
+   * NOTE for the render owner: `PostFX.update()` recomputes
+   * `depthResolve.enabled` from `ao || motionBlur || dof` every frame, so at
+   * 'low' and 'medium' quality (where all three are off) the pass never runs and
+   * particles lose their depth fade — which is most visible exactly there,
+   * because dust hugs the floor. FX cannot opt in from this side: any write we
+   * make here is overwritten before the composer runs. If PostFX ever grows a
+   * `requestDepth()` / refcount, wire it in here and soft particles come back
+   * for free. Until then the sprites' own feathered alpha carries it.
+   */
   _refreshDepth() {
-    const renderer = this.game?.renderer;
-    const pass = renderer?.postfx?.passes?.depthResolve;
-
-    if (pass && pass.texture && this.requestDepthPass && !pass.enabled) {
-      // See `requestDepthPass`. PostFX recomputes this whenever its own quality
-      // knobs change, so the request is re-made every frame rather than latched.
-      const step = renderer.adaptive?.step ?? 0;
-      if (step < 3) pass.enabled = true;
-    }
-
+    const pass = this.game?.renderer?.postfx?.passes?.depthResolve;
     const running = !!(pass && pass.enabled && pass.texture);
     this._softStable = running ? (this._softStable < 3 ? this._softStable + 1 : 3) : 0;
     const ok = this._softStable >= 2;

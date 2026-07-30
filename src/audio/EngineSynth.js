@@ -34,7 +34,7 @@ import CONFIG from '../core/Config.js';
 import { RNG, clamp, clamp01, lerp, damp } from '../core/MathUtils.js';
 import {
   fin, nyquistOf, gain, filter, osc, delayNode, shaper, loopSource, whiteFor,
-  holdParam, setParam, rampTo, targetTo, expTo, kill, chain,
+  holdParam, setParam, rampTo, targetTo, expTo, kill, chain, warnOnce,
 } from './DSP.js';
 
 /** Per-class voicing. Faster classes scream higher and growl less. */
@@ -77,6 +77,14 @@ export class EngineSynth {
     this.isPlayer = !!car?.isPlayer;
 
     const def = car?.def ?? {};
+    // A typo'd class would otherwise be silently voiced as mid-range `advanced`
+    // — plausible enough that nobody would ever hear it as a bug. Warn once.
+    if (def.class != null && !CLASS_TUNE[def.class]) {
+      warnOnce(`cls:${def.class}`, `audio: unknown car class '${def.class}' (first seen on car ${car?.id ?? index}) — voicing as 'advanced'. Known: ${Object.keys(CLASS_TUNE).join(', ')}`);
+    }
+    if (def.drive != null && !DRIVE_TUNE[def.drive]) {
+      warnOnce(`drv:${def.drive}`, `audio: unknown drive '${def.drive}' (first seen on car ${car?.id ?? index}) — voicing as 'rwd'. Known: ${Object.keys(DRIVE_TUNE).join(', ')}`);
+    }
     const cls = CLASS_TUNE[def.class] ?? CLASS_TUNE.advanced;
     const drv = DRIVE_TUNE[def.drive] ?? DRIVE_TUNE.rwd;
     const rng = new RNG((CONFIG.seed ?? 1) ^ (0x9e37 + this.carId * 7919));
@@ -97,10 +105,25 @@ export class EngineSynth {
     this.noiseDelay = 0.004 + rng.next() * 0.028;
     this._rng = rng;
 
-    // rpm range: prefer the vehicle model's numbers when it publishes them.
-    this.idleRpm = fin(def.idleRpm, 1100);
-    this.maxRpm = Math.max(this.idleRpm + 500, fin(def.maxRpm ?? def.redline, 13500));
-    this.gearCount = clamp(Math.round(fin(def.gears, 4)), 1, 8);
+    // rpm range — these are the real CarDefs field names (`redlineRpm`,
+    // `idleRpm`, `limiterRpm`, `gearCount`), not guesses. `maxRpm`/`redline`/
+    // `gears` are kept only as aliases for a hand-rolled def; the numeric
+    // literals are a last resort that no shipped car should ever reach.
+    this.idleRpm = fin(def.idleRpm, 1500);
+    this.redlineRpm = Math.max(this.idleRpm + 500,
+      fin(def.redlineRpm ?? def.maxRpm ?? def.redline, 13500));
+    // The limiter, not the redline, is the true ceiling: CarDefs lets the
+    // engine run LIMITER_OVERRUN (1.022×) past redline before it cuts.
+    this.limiterRpm = Math.max(this.redlineRpm,
+      fin(def.limiterRpm, this.redlineRpm * 1.022));
+    // rpmN spans idle → limiter, so rpmN == 1 is genuinely "against the stop".
+    this.maxRpm = this.limiterRpm;
+    // Where the limiter starts to bounce, in rpmN terms.
+    this.limitAt = (this.redlineRpm - this.idleRpm) / (this.maxRpm - this.idleRpm);
+    // `gearCount` is derived by defineCar(); `gearSpeeds.length` is the raw
+    // source. Cars ship 4 gears but the pro/super defs are free to differ.
+    this.gearCount = clamp(Math.round(fin(
+      def.gearCount ?? def.gearSpeeds?.length ?? def.gears, 4)), 1, 8);
     this.topSpeed = Math.max(1.5, fin(def.topSpeed, 9));
 
     // ── live smoothed state ──
@@ -508,7 +531,8 @@ export class EngineSynth {
     }
 
     // ── rev limiter ───────────────────────────────────────────────────────
-    const limitingTarget = (this.rpmN > 0.975 && th > 0.5) ? 1 : 0;
+    // Past the redline but still under the limiter's overrun — the bounce.
+    const limitingTarget = (this.rpmN >= this.limitAt && th > 0.5) ? 1 : 0;
     this.limiting = damp(this.limiting, limitingTarget, 14, d);
     if (this.limitAmp) this._w(24, this.limitAmp.gain, 0.30 * this.limiting, 0.02, 0.002);
     if (this.limitPitch) this._w(25, this.limitPitch.gain, 34 * this.limiting, 0.02, 0.2);

@@ -87,9 +87,16 @@ export class TrackBuilder {
     this.animated = new THREE.Group();
     this.animated.name = 'animated';
     this.scene.add(this.animated);
-    /** Pickup pad visuals — gameplay may hide or replace these. */
+    /**
+     * Fallback pickup-pad visuals. `PickupSystem` builds its own pad meshes, so
+     * this group is hidden by default — flip `visible` (or set
+     * `builder.showPadVisuals = true` before `build()`) to get a plain glowing
+     * ring per pad instead, e.g. for a track preview render.
+     */
     this.padGroup = new THREE.Group();
     this.padGroup.name = 'pickupPads';
+    this.padGroup.visible = false;
+    this.showPadVisuals = false;
     this.scene.add(this.padGroup);
 
     /** @type {CenterlineSpline|null} */
@@ -1709,19 +1716,36 @@ export class TrackBuilder {
     return this;
   }
 
+  /**
+   * Pad visuals are collected as matrices and emitted as ONE InstancedMesh in
+   * `build()` — twenty-odd glowing rings should not be twenty-odd draw calls.
+   */
   _padVisual(position, quaternion, radius) {
     this._padGeo ??= (() => {
-      const g = G.ringXZ(radius * 0.55, radius, 24);
+      const g = G.ringXZ(0.55, 1.0, 20);
       this._ownedGeo.push(g);
       return g;
     })();
     this._padMat ??= this.glow(0xffd479, 1.7, { opacity: 0.85, base: 0x241a05 });
-    const mesh = new THREE.Mesh(this._padGeo, this._padMat);
-    mesh.position.copy(position);
-    mesh.quaternion.copy(quaternion);
-    mesh.userData.noCollision = true;
+    this._padMatrices ??= [];
+    _s.set(radius, radius, radius);
+    this._padMatrices.push(new THREE.Matrix4().compose(position, quaternion, _s));
+  }
+
+  _flushPads() {
+    const list = this._padMatrices;
+    if (!list || list.length === 0) return;
+    const mesh = new THREE.InstancedMesh(this._padGeo, this._padMat, list.length);
+    for (let i = 0; i < list.length; i++) mesh.setMatrixAt(i, list[i]);
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     mesh.renderOrder = 2;
+    mesh.frustumCulled = false;
+    mesh.name = 'pickupPads';
+    mesh.userData.noCollision = true;
     this.padGroup.add(mesh);
+    list.length = 0;
   }
 
   /**
@@ -1826,7 +1850,15 @@ export class TrackBuilder {
     const topSpeed = o.topSpeed ?? 9.0;
     const brake = o.brake ?? 13.0;       // m/s² — 2 g gravity means big numbers
     const accel = o.accel ?? 7.0;
-    const tyre = o.tyre ?? 1.05;
+    /**
+     * Fraction of the theoretical friction circle the AI is willing to use.
+     * Gravity is 2 g here, so `grip · g` alone says a 1.0-grip tyre can pull
+     * 19.6 m/s² and every corner on a hand-built track is flat out — which is
+     * both wrong (a real tyre saturates long before that) and boring. 0.55 puts
+     * a 6 m radius corner at ~8 m/s and a 3 m hairpin at ~5.7 m/s, which is
+     * where the cars actually break away.
+     */
+    const tyre = o.tyre ?? 0.55;
     const safety = o.safety ?? 0.92;
     const gravity = 19.6;
     const raceLine = o.raceLine !== false;
@@ -1881,15 +1913,28 @@ export class TrackBuilder {
         }
       }
     }
-    // Forward pass: you cannot accelerate faster than the engine allows.
-    for (let pass = 0; pass < 3; pass++) {
+    // Forward pass: you cannot accelerate faster than the drivetrain allows.
+    // Acceleration is speed-dependent — a constant `accel` all the way to top
+    // speed makes every corner exit instant and turns the whole path into a
+    // flat-out lap. `a(v) = accel·(1 − v/vmax)^0.7 + floor` matches a torque
+    // curve fighting drag closely enough to give a believable profile.
+    for (let pass = 0; pass < 4; pass++) {
       for (let k = 0; k < n; k++) {
         const p = (k - 1 + n) % n;
         const vPrev = nodes[p].targetSpeed;
-        const vMax = Math.sqrt(vPrev * vPrev + 2 * accel * ds);
+        const head = Math.max(0, 1 - vPrev / topSpeed);
+        const a = accel * Math.pow(head, 0.7) + 0.6;
+        const vMax = Math.sqrt(vPrev * vPrev + 2 * a * ds);
         if (nodes[k].targetSpeed > vMax) nodes[k].targetSpeed = vMax;
       }
     }
+
+    // Estimated flat-out lap time for this profile — tracks print it in debug
+    // so a designer can see immediately whether a layout is in the 45–75 s
+    // window the game is designed around.
+    let lapTime = 0;
+    for (let k = 0; k < n; k++) lapTime += ds / Math.max(0.5, nodes[k].targetSpeed);
+    this.estimatedLapSeconds = lapTime;
 
     // A crude but effective racing line: hug the inside of a corner, drift out
     // on entry/exit. Then smooth so it is drivable.
@@ -1957,6 +2002,7 @@ export class TrackBuilder {
       spacing: ds,
       closed: true,
       topSpeed,
+      estimatedLapSeconds: this.estimatedLapSeconds,
       branches: this.shortcutList.filter((s) => s.aiNodes.length > 0).map((s) => ({
         id: s.id, entryT: s.entryT, exitT: s.exitT, risk: s.risk, nodes: s.aiNodes,
       })),
@@ -2033,8 +2079,10 @@ export class TrackBuilder {
       mesh.renderOrder = inst.order;
       mesh.name = `inst:${key}`;
       mesh.userData.noCollision = true;
+      // InstancedMesh.computeBoundingSphere() folds in the instance matrices, so
+      // a set that only covers one corner of the track can still be culled.
       mesh.computeBoundingSphere?.();
-      mesh.frustumCulled = false;   // instanced sets straddle the whole track
+      mesh.frustumCulled = true;
       (inst.decor ? this.decor : this.scene).add(mesh);
       this.stats.instanced++;
       const idx = inst.geometry.getIndex();
@@ -2057,6 +2105,8 @@ export class TrackBuilder {
     if (!this.respawnList) this.respawns();
     if (this.pads.length === 0) this.pickupPads();
     if (!this.aiPathData) this.aiPath();
+    this._flushPads();
+    this.padGroup.visible = !!this.showPadVisuals;
 
     // Bounds: the union of every mesh, padded, with a floor.
     const bounds = this.bounds.clone();
@@ -2079,6 +2129,8 @@ export class TrackBuilder {
       description: this.meta.description,
       previewColors: this.meta.previewColors,
       lengthMeters: this.spline?.length ?? 0,
+      /** Flat-out lap estimate from the AI speed profile, seconds. */
+      estimatedLapSeconds: this.estimatedLapSeconds ?? 0,
 
       scene: this.scene,
       collision,

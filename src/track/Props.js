@@ -213,7 +213,7 @@ const CHESS_PROFILES = {
 
 function chessGeo(kind = 'pawn') {
   const prof = CHESS_PROFILES[kind] ?? CHESS_PROFILES.pawn;
-  const parts = [G.latheMeters(prof, 20)];
+  const parts = [G.latheMeters(prof, 14)];
   if (kind === 'king') {
     const cx = G.boxMeters(0.010, 0.038, 0.010);
     cx.translate(0, 0.262, 0);
@@ -371,7 +371,9 @@ function dinoSkeletonParts(scale = 1) {
   for (let i = 0; i < spine.length - 1; i++) {
     const f = i / (spine.length - 1);
     const r = (0.10 + 0.16 * Math.sin(Math.min(1, f * 1.8) * Math.PI * 0.6)) * s;
-    const seg = G.beamBetween(spine[i], spine[i + 1], r * 2, r * 2, { radius: r * 0.5 });
+    // Round beams (24 tris) rather than bevelled boxes: 40 vertebrae × a seg-8
+    // rounded box would be 30 000 triangles on its own.
+    const seg = G.beamBetween(spine[i], spine[i + 1], r * 2, r * 2, { round: true, seg: 6 });
     bones.push(seg);
     if (i % 3 === 0 && f > 0.10 && f < 0.62) {
       // vertebral spike
@@ -394,7 +396,7 @@ function dinoSkeletonParts(scale = 1) {
         new THREE.Vector3(p.x + side * 1.9 * s, p.y - 0.63 * drop, p.z),
         new THREE.Vector3(p.x + side * 1.1 * s, p.y - drop, p.z),
       ];
-      bones.push(G.tubeAlong(pts, 0.055 * s, 6));
+      bones.push(G.tubeAlong(pts, 0.055 * s, 5, false, 0.4, 0.45 * s));
     }
   }
   // Skull: a wedge-ish box with a jaw.
@@ -565,7 +567,7 @@ export const PROPS = {
         parts: [{
           geo: geoCache(b, `domino:${w}:${h}:${d}`, () => dominoGeo(w, h, d)),
           mat: b.mat('toy/dice_pips', { color: o.color ?? 0xf6f2e6, params: { face: o.face ?? 3 } }),
-          surfaceId: SurfaceId.PLASTIC,
+          surfaceId: SurfaceId.PLASTIC, cast: false,
         }],
         collider: makeBox(w / 2, h / 2, d / 2),
         comY: h * 0.5,
@@ -597,9 +599,9 @@ export const PROPS = {
       const r = o.radius ?? 0.048;
       return {
         parts: [{
-          geo: geoCache(b, `marble:${r}`, () => G.sphereMeters(r, 16)),
+          geo: geoCache(b, `marble:${r}`, () => G.sphereMeters(r, 10)),
           mat: b.mat('glass/frosted', { color: o.color ?? 0x8fd6ff }),
-          surfaceId: SurfaceId.GLASS,
+          surfaceId: SurfaceId.GLASS, cast: false,
         }],
         collider: makeSphere(r),
         comY: r,
@@ -634,7 +636,7 @@ export const PROPS = {
         parts: [{
           geo: geoCache(b, `pencil:${len}:${r}`, () => pencilGeo(len, r)),
           mat: b.mat('plastic/injection_gloss', { color: o.color ?? 0xe8b81e }),
-          surfaceId: SurfaceId.PLASTIC,
+          surfaceId: SurfaceId.PLASTIC, cast: false,
         }],
         collider: makeCapsule(r, len * 0.44, 'x'),
         comY: r,
@@ -650,7 +652,7 @@ export const PROPS = {
       const r = o.radius ?? 0.16;
       return {
         parts: [{
-          geo: geoCache(b, `ball:${r}`, () => G.sphereMeters(r, 22)),
+          geo: geoCache(b, `ball:${r}`, () => G.sphereMeters(r, 16)),
           mat: b.mat('rubber/floor_mat', { color: o.color ?? 0xdd3344, sizeMeters: 1 }),
           surfaceId: SurfaceId.RUBBER,
         }],
@@ -929,7 +931,7 @@ export const PROPS = {
     build(b, o) {
       const r = o.radius ?? 0.5, h = o.height ?? 0.8;
       const seed = o.seed ?? 5;
-      const geo = geoCache(b, `bush:${r}:${h}:${seed & 15}`, () => G.foliageCluster(r, h, o.cards ?? 6, seed));
+      const geo = geoCache(b, `bush:${r}:${h}:${seed & 3}`, () => G.foliageCluster(r, h, o.cards ?? 6, seed));
       const base = b.mat('fabric/felt', { params: { color: o.color ?? 0x35682f }, doubleSide: true, sizeMeters: 1 });
       return {
         parts: [{ geo, mat: base, surfaceId: null, noCollide: true, wind: true }],
@@ -943,7 +945,7 @@ export const PROPS = {
     dynamic: false,
     build(b, o) {
       const h = o.height ?? 0.09;
-      const geo = geoCache(b, `tuft:${h}:${(o.seed ?? 1) & 7}`, () => G.grassTuft(h, 0.022, 3, o.seed ?? 1));
+      const geo = geoCache(b, `tuft:${h}:${(o.seed ?? 1) & 3}`, () => G.grassTuft(h, 0.022, 3, o.seed ?? 1));
       return {
         parts: [{
           geo,
@@ -959,7 +961,7 @@ export const PROPS = {
     dynamic: false,
     build(b, o) {
       const h = o.height ?? 0.22;
-      const geo = geoCache(b, `flower:${h}:${(o.seed ?? 1) & 7}`, () => {
+      const geo = geoCache(b, `flower:${h}:${(o.seed ?? 1) & 3}`, () => {
         const parts = [];
         const stem = G.cylinderMeters(0.005, 0.007, h, 5);
         stem.translate(0, h * 0.5, 0);
@@ -1027,7 +1029,7 @@ export const PROPS = {
             mat: o.text
               ? b.decal({ text: o.text, key: `frame:${o.text}`, width: 512, height: 384, background: o.background ?? '#2c3a52', textColor: o.textColor ?? '#e8dcc0', offsetFactor: 0, roughness: 0.8 })
               : b.mat('wallpaper/floral'),
-            surfaceId: null, noCollide: true, zOffset: 0.012,
+            surfaceId: null, noCollide: true, zOffset: 0.012, cast: false,
           },
         ],
         radius: Math.max(w, h) * 0.6,
@@ -1041,7 +1043,7 @@ export const PROPS = {
     build(b, o) {
       const w = o.width ?? 1.0, h = o.height ?? 0.6, d = o.depth ?? 0.5;
       const geo = geoCache(b, `hedge:${w}:${h}:${d}`, () => {
-        const g = G.boxMeters(w, h, d, { radius: Math.min(w, d) * 0.22, seg: 3 });
+        const g = G.boxMeters(w, h, d, { radius: Math.min(w, d) * 0.22, seg: 2 });
         G.roughen(g, 0.02, 22, 4);
         g.translate(0, h * 0.5, 0);
         return g;
@@ -1617,36 +1619,44 @@ export function buildFan(b, o = {}) {
   const cageMat = b.mat('metal/brushed_alu');
   const bladeMat = b.mat('metal/painted', { params: { color: o.color ?? 0x3a4652, wear: 0.35 } });
 
-  // Static mount.
-  const mount = new THREE.Mesh(G.cylinderMeters(0.05, 0.05, o.dropLength ?? 0.5, 10), cageMat);
-  mount.position.y = (o.dropLength ?? 0.5) * 0.5;
-  mount.castShadow = true;
-  mount.userData.noCollision = true;
-  group.add(mount);
+  // Static parts (mount + cage) merged into one mesh.
+  const staticParts = [];
+  const drop = o.dropLength ?? 0.5;
+  const mount = G.cylinderMeters(0.05, 0.05, drop, 8);
+  mount.translate(0, drop * 0.5, 0);
+  staticParts.push(mount);
+  if (o.cage !== false) {
+    const cage = G.torusMeters(r * 1.05, 0.012, 22, 5);
+    cage.rotateX(Math.PI / 2);
+    staticParts.push(cage);
+  }
+  const staticGeo = G.mergeList(staticParts);
+  for (const g of staticParts) g.dispose();
+  if (staticGeo) {
+    const m = new THREE.Mesh(staticGeo, cageMat);
+    m.castShadow = true;
+    m.userData.noCollision = true;
+    group.add(m);
+    b._ownedGeo.push(staticGeo);
+  }
 
-  const hub = new THREE.Group();
-  const hubMesh = new THREE.Mesh(G.cylinderMeters(0.10, 0.12, 0.09, 14), cageMat);
-  hubMesh.userData.noCollision = true;
-  hub.add(hubMesh);
+  // The rotor is one merged mesh so a spinning fan costs a single draw call.
+  const rotorParts = [G.cylinderMeters(0.10, 0.12, 0.09, 12)];
   for (let i = 0; i < blades; i++) {
     const a = (i / blades) * Math.PI * 2;
-    const blade = new THREE.Mesh(G.boxMeters(r, 0.012, 0.20, { radius: 0.005, seg: 2 }), bladeMat);
-    blade.position.set(Math.cos(a) * r * 0.55, 0, Math.sin(a) * r * 0.55);
-    blade.rotation.y = -a;
-    blade.rotation.z = 0.22;
-    blade.castShadow = true;
-    blade.userData.noCollision = true;
-    hub.add(blade);
+    const blade = G.boxMeters(r, 0.012, 0.20, { radius: 0.004, seg: 2 });
+    blade.rotateZ(0.22);
+    blade.rotateY(-a);
+    blade.translate(Math.cos(a) * r * 0.55, 0, Math.sin(a) * r * 0.55);
+    rotorParts.push(blade);
   }
-  hub.position.y = 0;
+  const rotorGeo = G.mergeList(rotorParts);
+  for (const g of rotorParts) g.dispose();
+  const hub = new THREE.Mesh(rotorGeo ?? G.cylinderMeters(0.1, 0.1, 0.09, 8), bladeMat);
+  hub.castShadow = true;
+  hub.userData.noCollision = true;
   group.add(hub);
-
-  if (o.cage !== false) {
-    const cage = new THREE.Mesh(G.torusMeters(r * 1.05, 0.012, 26, 6), cageMat);
-    cage.rotation.x = Math.PI / 2;
-    cage.userData.noCollision = true;
-    group.add(cage);
-  }
+  if (rotorGeo) b._ownedGeo.push(rotorGeo);
 
   b.addObject(group, { animated: true });
   const fixture = b.propRuntime.spin(hub, { speed: o.speed ?? 3.4, axis: 'y' });
@@ -1660,27 +1670,29 @@ export function buildPendulum(b, o = {}) {
   const len = o.length ?? 2.2;
   const mat = b.mat(o.material ?? 'metal/brushed_alu');
 
-  const pivot = new THREE.Group();
-  const rod = new THREE.Mesh(G.cylinderMeters(0.022, 0.022, len, 8), mat);
-  rod.position.y = -len * 0.5;
-  rod.castShadow = true;
-  rod.userData.noCollision = true;
-  pivot.add(rod);
-  const bob = new THREE.Mesh(
-    o.disc ? G.cylinderMeters(o.radius ?? 0.28, o.radius ?? 0.28, 0.05, 20) : G.sphereMeters(o.radius ?? 0.22, 16),
-    b.mat(o.bobMaterial ?? 'metal/chrome'),
-  );
-  if (o.disc) bob.rotation.x = Math.PI / 2;
-  bob.position.y = -len;
-  bob.castShadow = true;
-  bob.userData.noCollision = true;
-  pivot.add(bob);
+  // Rod + bob merged: the whole pendulum is one draw call.
+  const rod = G.cylinderMeters(0.022, 0.022, len, 8);
+  rod.translate(0, -len * 0.5, 0);
+  const bobGeo = o.disc
+    ? G.cylinderMeters(o.radius ?? 0.28, o.radius ?? 0.28, 0.05, 16)
+    : G.sphereMeters(o.radius ?? 0.22, 12);
+  if (o.disc) bobGeo.rotateX(Math.PI / 2);
+  bobGeo.translate(0, -len, 0);
+  const swingGeo = G.mergeList([rod, bobGeo]);
+  rod.dispose(); bobGeo.dispose();
+  const pivot = new THREE.Mesh(swingGeo, b.mat(o.bobMaterial ?? 'metal/chrome'));
+  pivot.castShadow = true;
+  pivot.userData.noCollision = true;
   group.add(pivot);
+  if (swingGeo) b._ownedGeo.push(swingGeo);
+  const bob = pivot;
 
-  const bracket = new THREE.Mesh(G.boxMeters(0.10, 0.08, 0.10), mat);
+  const bracketGeo = G.boxMeters(0.10, 0.08, 0.10);
+  const bracket = new THREE.Mesh(bracketGeo, mat);
   bracket.position.y = 0.05;
   bracket.userData.noCollision = true;
   group.add(bracket);
+  b._ownedGeo.push(bracketGeo);
 
   b.addObject(group, { animated: true });
   const fixture = b.propRuntime.pendulum(pivot, {
@@ -1714,8 +1726,8 @@ export function buildTrain(b, o = {}) {
     _v.set(-tan.z, 0, tan.x).normalize();
     railL.push(new THREE.Vector3(p.x + _v.x * gauge * 0.5, p.y + railY, p.z + _v.z * gauge * 0.5));
     railR.push(new THREE.Vector3(p.x - _v.x * gauge * 0.5, p.y + railY, p.z - _v.z * gauge * 0.5));
-    if (i % 3 === 0) {
-      const sl = G.boxMeters(gauge * 1.5, 0.016, 0.05, { radius: 0.004, seg: 1 });
+    if (i % 4 === 0) {
+      const sl = G.boxMeters(gauge * 1.5, 0.016, 0.05);
       _e.set(0, Math.atan2(tan.x, tan.z), 0);
       _q.setFromEuler(_e);
       _m.compose(new THREE.Vector3(p.x, p.y + 0.008, p.z), _q, new THREE.Vector3(1, 1, 1));
@@ -1724,8 +1736,8 @@ export function buildTrain(b, o = {}) {
     }
   }
   const rails = G.mergeList([
-    G.tubeAlong(railL, 0.010, 5, closed),
-    G.tubeAlong(railR, 0.010, 5, closed),
+    G.tubeAlong(railL, 0.010, 4, closed, 0.4, 0.6),
+    G.tubeAlong(railR, 0.010, 4, closed, 0.4, 0.6),
   ]);
   if (rails) b.add(rails, railMat, { surfaceId: SurfaceId.METAL, cast: false, receive: true });
   const sleeperGeo = G.mergeList(sleepers);
@@ -1733,51 +1745,46 @@ export function buildTrain(b, o = {}) {
   rails?.dispose();
   sleeperGeo?.dispose();
 
-  // The locomotive + two wagons, as one group.
+  // The locomotive + wagons. Everything is rigid relative to the train, so the
+  // whole consist collapses to exactly two meshes (body colour + chrome trim).
   const group = new THREE.Group();
   const bodyMat = b.mat('metal/painted', { params: { color: o.color ?? 0x1f6b34, wear: 0.6 } });
   const trimMat = b.mat('metal/chrome');
+  const bodyParts = [];
+  const trimParts = [];
+  const at = (geo, x, y, z) => { geo.translate(x, y, z); return geo; };
 
-  const loco = new THREE.Group();
-  const boiler = new THREE.Mesh(G.cylinderMeters(0.09, 0.09, 0.36, 14), bodyMat);
-  boiler.rotation.x = Math.PI / 2;
-  boiler.position.set(0, 0.13, 0.05);
-  loco.add(boiler);
-  const cab = new THREE.Mesh(G.boxMeters(0.20, 0.17, 0.18, { radius: 0.02, seg: 2 }), bodyMat);
-  cab.position.set(0, 0.16, -0.20);
-  loco.add(cab);
-  const funnel = new THREE.Mesh(G.cylinderMeters(0.045, 0.035, 0.12, 10), trimMat);
-  funnel.position.set(0, 0.26, 0.18);
-  loco.add(funnel);
-  const base = new THREE.Mesh(G.boxMeters(0.22, 0.05, 0.62, { radius: 0.008, seg: 2 }), trimMat);
-  base.position.set(0, 0.05, 0);
-  loco.add(base);
+  const boiler = G.cylinderMeters(0.09, 0.09, 0.36, 12);
+  boiler.rotateX(Math.PI / 2);
+  bodyParts.push(at(boiler, 0, 0.13, 0.05));
+  bodyParts.push(at(G.boxMeters(0.20, 0.17, 0.18, { radius: 0.02, seg: 2 }), 0, 0.16, -0.20));
+  trimParts.push(at(G.cylinderMeters(0.045, 0.035, 0.12, 8), 0, 0.26, 0.18));
+  trimParts.push(at(G.boxMeters(0.22, 0.05, 0.62), 0, 0.05, 0));
   for (const [wx, wz, wr] of [[0.11, 0.16, 0.055], [-0.11, 0.16, 0.055], [0.11, -0.14, 0.075], [-0.11, -0.14, 0.075]]) {
-    const wheel = new THREE.Mesh(G.cylinderMeters(wr, wr, 0.022, 12), trimMat);
-    wheel.rotation.z = Math.PI / 2;
-    wheel.position.set(wx, wr, wz);
-    loco.add(wheel);
+    const wheel = G.cylinderMeters(wr, wr, 0.022, 10);
+    wheel.rotateZ(Math.PI / 2);
+    trimParts.push(at(wheel, wx, wr, wz));
   }
-  group.add(loco);
-
   for (let i = 1; i <= (o.wagons ?? 2); i++) {
-    const wag = new THREE.Group();
-    const tub = new THREE.Mesh(G.boxMeters(0.22, 0.14, 0.36, { radius: 0.015, seg: 2 }), bodyMat);
-    tub.position.set(0, 0.14, 0);
-    wag.add(tub);
-    const wbase = new THREE.Mesh(G.boxMeters(0.24, 0.04, 0.40, { radius: 0.006, seg: 1 }), trimMat);
-    wbase.position.set(0, 0.05, 0);
-    wag.add(wbase);
+    const dz = -0.52 * i;
+    bodyParts.push(at(G.boxMeters(0.22, 0.14, 0.36, { radius: 0.015, seg: 2 }), 0, 0.14, dz));
+    trimParts.push(at(G.boxMeters(0.24, 0.04, 0.40), 0, 0.05, dz));
     for (const [wx, wz] of [[0.12, 0.12], [-0.12, 0.12], [0.12, -0.12], [-0.12, -0.12]]) {
-      const wheel = new THREE.Mesh(G.cylinderMeters(0.05, 0.05, 0.02, 10), trimMat);
-      wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(wx, 0.05, wz);
-      wag.add(wheel);
+      const wheel = G.cylinderMeters(0.05, 0.05, 0.02, 8);
+      wheel.rotateZ(Math.PI / 2);
+      trimParts.push(at(wheel, wx, 0.05, dz + wz));
     }
-    wag.position.z = -0.52 * i;
-    group.add(wag);
   }
-  group.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.userData.noCollision = true; } });
+  for (const [parts, mtl] of [[bodyParts, bodyMat], [trimParts, trimMat]]) {
+    const merged = G.mergeList(parts);
+    for (const g of parts) g.dispose();
+    if (!merged) continue;
+    const mesh = new THREE.Mesh(merged, mtl);
+    mesh.castShadow = true;
+    mesh.userData.noCollision = true;
+    group.add(mesh);
+    b._ownedGeo.push(merged);
+  }
   group.position.copy(world[0]);
 
   b.addObject(group, { animated: true });
@@ -1819,27 +1826,32 @@ export function buildSprinkler(b, o = {}) {
   group.position.set(pos[0], pos[1], pos[2]);
   const metal = b.mat('metal/galvanised');
 
-  const spike = new THREE.Mesh(G.cylinderMeters(0.018, 0.03, 0.12, 8), metal);
-  spike.position.y = 0.06;
-  spike.userData.noCollision = true;
-  group.add(spike);
-  const bodyMesh = new THREE.Mesh(G.cylinderMeters(0.05, 0.06, 0.09, 12), metal);
-  bodyMesh.position.y = 0.16;
-  bodyMesh.userData.noCollision = true;
-  group.add(bodyMesh);
+  const spike = G.cylinderMeters(0.018, 0.03, 0.12, 8);
+  spike.translate(0, 0.06, 0);
+  const post = G.cylinderMeters(0.05, 0.06, 0.09, 10);
+  post.translate(0, 0.16, 0);
+  const baseGeo = G.mergeList([spike, post]);
+  spike.dispose(); post.dispose();
+  if (baseGeo) {
+    const m = new THREE.Mesh(baseGeo, metal);
+    m.userData.noCollision = true;
+    m.castShadow = true;
+    group.add(m);
+    b._ownedGeo.push(baseGeo);
+  }
 
-  const head = new THREE.Group();
+  const armGeo = G.boxMeters(0.02, 0.02, 0.14);
+  armGeo.translate(0, 0, 0.06);
+  const nozzle = G.cylinderMeters(0.012, 0.02, 0.05, 8);
+  nozzle.rotateX(-1.1);
+  nozzle.translate(0, 0.02, 0.13);
+  const headGeo = G.mergeList([armGeo, nozzle]);
+  armGeo.dispose(); nozzle.dispose();
+  const head = new THREE.Mesh(headGeo ?? G.boxMeters(0.02, 0.02, 0.14), metal);
   head.position.y = 0.21;
-  const arm = new THREE.Mesh(G.boxMeters(0.02, 0.02, 0.14), metal);
-  arm.position.set(0, 0, 0.06);
-  arm.userData.noCollision = true;
-  head.add(arm);
-  const nozzle = new THREE.Mesh(G.cylinderMeters(0.012, 0.02, 0.05, 8), metal);
-  nozzle.rotation.x = -1.1;
-  nozzle.position.set(0, 0.02, 0.13);
-  nozzle.userData.noCollision = true;
-  head.add(nozzle);
+  head.userData.noCollision = true;
   group.add(head);
+  if (headGeo) b._ownedGeo.push(headGeo);
 
   // Water fan: a translucent, additive cone of "spray".
   const radius = o.radius ?? 3.0;

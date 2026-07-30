@@ -19,7 +19,7 @@
  *   • **Wind** — every shrub, hedge, flower and grass tuft sways in a vertex
  *     shader driven from `TrackSystem.update`.
  *
- * Lap ≈ 275 m ⇒ ~50–55 s.
+ * Lap ≈ 300 m; a flat-out AI lap is ~43 s, a contested race lap 48–58 s.
  */
 
 import * as THREE from 'three';
@@ -66,13 +66,18 @@ const NODES = [
   [26, 0, 38, 2.8],        // 18
   [16, 0, 37, 2.8],        // 19
   [5, 0, 36, 2.8],         // 20
-  [-6, 0, 35, 2.8],        // 21
-  [-17, 0, 34, 2.8],       // 22
-  [-26, 0, 35, 2.6],       // 23
-  [-33, 0.55, 33, 2.6],    // 24 ← up the deck ramp
-  [-39, 1.10, 30, 2.6],    // 25 ← on the deck
-  [-40, 1.10, 25, 2.6],    // 26 ← launch
-  [-38, 0.30, 18, 3.0],    // 27 ← landing bank
+  // ── an excursion out across the middle lawn and back ──
+  [-1, 0, 29, 2.8],        // 21
+  [-3, 0, 20, 2.6],        // 22
+  [-10, 0, 15, 2.6],       // 23
+  [-19, 0, 17, 2.6],       // 24
+  [-23, 0, 26, 2.6],       // 25
+  [-19, 0, 34, 2.8],       // 26
+  [-26, 0, 35, 2.6],       // 27
+  [-33, 0.55, 33, 2.6],    // 28 ← up the deck ramp
+  [-39, 1.10, 30, 2.6],    // 29 ← on the deck
+  [-40, 1.10, 25, 2.6],    // 30 ← launch
+  [-38, 0.30, 18, 3.0],    // 31 ← landing bank
 ];
 
 export default {
@@ -119,7 +124,7 @@ function buildGround(b) {
   b.floor({
     center: [(YARD.x0 + YARD.x1) / 2, (YARD.z0 + YARD.z1) / 2],
     size: [YARD.x1 - YARD.x0, YARD.z1 - YARD.z0],
-    segments: 48,
+    segments: 32,
     heightFn: (x, z) => (
       LAWN_Y
       + Math.sin(x * 0.075) * 0.008
@@ -640,9 +645,12 @@ function buildVegPatch(b) {
             0.16,
             bed.c[1] - d / 2 + 0.5 + r * ((d - 1) / 3),
           ],
+          rotation: [0, ((r * 7 + c * 3) % 12) * 0.52, 0],
+          scale: 0.85 + ((r + c) % 4) * 0.12,
+          // One seed + one colour: the whole vegetable patch is a single
+          // InstancedMesh. Variety comes from the instance matrices.
           radius: 0.20, height: 0.34, cards: 4,
-          color: [0x4f8a35, 0x3f7a2c, 0x5f9a3c][(r + c) % 3],
-          seed: r * 13 + c, instanced: true,
+          color: 0x4f8a35, seed: 1, instanced: true,
         });
       }
     }
@@ -697,7 +705,7 @@ function buildRampAndHose(b) {
     const z = -30.5 + Math.sin(f * 5.4) * 3.4 - f * 4.5;
     hosePts.push(new THREE.Vector3(x, 0.038, z));
   }
-  const hose = G.tubeAlong(hosePts, 0.032, 7);
+  const hose = G.tubeAlong(hosePts, 0.032, 6, false, 0.4, 0.55);
   b.add(hose, b.mat('rubber/floor_mat', { color: 0x2f6b3a }), {
     surfaceId: SurfaceId.RUBBER, cast: true, receive: true,
   });
@@ -738,11 +746,11 @@ function buildSprinklerArc(b) {
   // A second, smaller one on the inside of the last corner before the deck.
   buildSprinkler(b, {
     id: 'lawn_sprinkler',
-    position: [-14.0, 0.02, 30.4],
-    radius: 3.4,
+    position: [-7.0, 0.02, 24.5],
+    radius: 4.4,
     sweep: Math.PI * 0.7,
     period: 3.4,
-    rotation: -1.55,
+    rotation: 0.35,
     gripScale: 0.5,
   });
   // The hose feeding them.
@@ -755,7 +763,7 @@ function buildSprinklerArc(b) {
       6.5 + f * 12 + Math.cos(f * 5) * 0.5,
     ));
   }
-  const g = G.tubeAlong(feed, 0.026, 6);
+  const g = G.tubeAlong(feed, 0.026, 5, false, 0.4, 0.6);
   b.add(g, b.mat('rubber/floor_mat', { color: 0x2f6b3a }), {
     surfaceId: SurfaceId.RUBBER, cast: false, receive: true,
   });
@@ -802,43 +810,49 @@ function buildHouseAndFence(b) {
     { surfaceId: SurfaceId.CONCRETE });
   eave.dispose();
 
-  // Timber fence right round the garden. Boards are instanced; the barrier is a
-  // single invisible wall per side so a car cannot squeeze between palings.
-  const board = G.boxMeters(0.14, FENCE_H, 0.022, { radius: 0.004, seg: 1 });
-  const boardMat = b.mat('wood/pine_planks', { color: 0x8a6f47 });
-  const railGeo = G.boxMeters(0.05, 0.09, 2.0, { radius: 0.006, seg: 1 });
+  // Timber fence right round the garden. A close-boarded panel reads exactly
+  // like palings once the plank texture is on it, and costs four slabs instead
+  // of two thousand instanced boards — the posts and the capping rail carry the
+  // silhouette.
+  const boardMat = b.mat('wood/pine_planks', { color: 0x8a6f47, rotation: Math.PI / 2 });
+  const trimMat = b.mat('wood/pine_planks', { color: 0x6f5636 });
   const sides = [
     { a: [YARD.x0, YARD.z0], c: [YARD.x1, YARD.z0], axis: 'x' },
     { a: [YARD.x0, YARD.z1], c: [YARD.x1, YARD.z1], axis: 'x' },
     { a: [YARD.x0, YARD.z0], c: [YARD.x0, YARD.z1], axis: 'z' },
     { a: [YARD.x1, YARD.z0], c: [YARD.x1, YARD.z1], axis: 'z' },
   ];
+  const postGeo = G.boxMeters(0.11, FENCE_H + 0.16, 0.11, { radius: 0.008, seg: 2 });
+  const capGeo = G.boxMeters(0.16, 0.05, 2.4, { radius: 0.008, seg: 2 });
   for (const s of sides) {
     const len = Math.hypot(s.c[0] - s.a[0], s.c[1] - s.a[1]);
-    const n = Math.floor(len / 0.17);
+    b.wall(s.a, s.c, {
+      thickness: 0.06, height: FENCE_H, y: LAWN_Y,
+      material: 'wood/pine_planks', matOpts: { color: 0x8a6f47, rotation: Math.PI / 2 },
+      surfaceId: SurfaceId.WOOD,
+    });
     const yaw = s.axis === 'x' ? 0 : Math.PI / 2;
-    for (let i = 0; i < n; i++) {
-      const f = (i + 0.5) / n;
+    const posts = Math.max(2, Math.round(len / 2.4));
+    for (let i = 0; i <= posts; i++) {
+      const f = i / posts;
       const x = s.a[0] + (s.c[0] - s.a[0]) * f;
       const z = s.a[1] + (s.c[1] - s.a[1]) * f;
-      const h = FENCE_H * (0.94 + ((i * 37) % 13) / 130);
-      b.instanceAt('fence:board', board, boardMat, [x, h / 2, z], [0, yaw, 0],
-        [1, h / FENCE_H, 1], { collide: false, cast: true, receive: true });
-    }
-    for (const ry of [0.45, 1.2]) {
-      const m = Math.max(1, Math.round(len / 2.0));
-      for (let i = 0; i < m; i++) {
-        const f = (i + 0.5) / m;
-        const x = s.a[0] + (s.c[0] - s.a[0]) * f;
-        const z = s.a[1] + (s.c[1] - s.a[1]) * f;
-        b.instanceAt('fence:rail', railGeo, boardMat, [x, ry, z], [0, yaw + Math.PI / 2, 0],
-          [1, 1, len / m / 2.0], { collide: false, cast: false, receive: false });
+      b.instanceAt('fence:post', postGeo, trimMat,
+        [x, LAWN_Y + (FENCE_H + 0.16) / 2, z], [0, yaw, 0], 1,
+        { collide: false, cast: true, receive: true });
+      if (i < posts) {
+        b.instanceAt('fence:cap', capGeo, trimMat,
+          [s.a[0] + (s.c[0] - s.a[0]) * (f + 0.5 / posts), LAWN_Y + FENCE_H + 0.02,
+            s.a[1] + (s.c[1] - s.a[1]) * (f + 0.5 / posts)],
+          [0, yaw + Math.PI / 2, 0], [1, 1, len / posts / 2.4],
+          { collide: false, cast: true, receive: false });
       }
     }
-    b.invisibleWall(s.a, s.c, 0, FENCE_H, SurfaceId.WOOD);
+    b.invisibleWall(s.a, s.c, LAWN_Y, FENCE_H, SurfaceId.WOOD);
   }
-  board.dispose();
-  railGeo.dispose();
+  postGeo.dispose();
+  capGeo.dispose();
+  void boardMat;
 }
 
 // ════════════════════════════════════════════════════════════════ planting
@@ -850,7 +864,7 @@ function buildPlanting(b) {
     { a: [-20, -14], c: [-4, -14] },
     { a: [4, -14], c: [18, -14] },
     { a: [10, 6], c: [10, 22] },
-    { a: [-6, 12], c: [-6, 24] },
+    { a: [2, 10], c: [2, -2] },
     { a: [-22, 4], c: [-8, 4] },
   ];
   for (const h of hedges) {
@@ -907,7 +921,7 @@ function buildPlanting(b) {
     [24, 8], [30, -4], [18, -20], [-2, -20], [-20, -22],
     [-34, -14], [12, 12], [-10, 2],
   ];
-  const colours = [0xe0679a, 0xe8c033, 0xd8503c, 0xa26fd0, 0xf0f0e0];
+  const colours = [0xe0679a, 0xe8c033, 0xa26fd0];
   for (let c = 0; c < clumps.length; c++) {
     for (let i = 0; i < 9; i++) {
       b.prop('flower', {
@@ -921,7 +935,7 @@ function buildPlanting(b) {
         height: 0.22,
         scale: 0.7 + b.rnd() * 0.7,
         color: colours[(c + i) % colours.length],
-        seed: (c + i) & 3,
+        seed: 1,
         instanced: true,
       });
     }
@@ -1012,7 +1026,7 @@ function buildRaceData(b) {
     background: '#2c5d2f', textColor: '#f2f0dc', border: '#c8a94e',
   });
 
-  b.checkpoints({ count: 17, halfWidthPad: 1.6 });
+  b.checkpoints({ count: 19, halfWidthPad: 1.6 });
   b.startGrid({ count: 8, columns: 2, rowGap: 2.05, firstBack: 3.4, spread: 0.42 });
   b.respawns({ spacing: 12 });
 
@@ -1022,10 +1036,11 @@ function buildRaceData(b) {
   b.pickupRow(b.tNear([34, 0.15, -20]), { count: 3, spread: 0.8 });
   b.pickupRow(b.tNear([40.5, 0, 12]), { count: 3, spread: 0.9 });
   b.pickupRow(b.tNear([10, 0, 37]), { count: 3, spread: 1.0 });
-  b.pickupRow(b.tNear([-22, 0, 34.5]), { count: 3, spread: 0.9 });
+  b.pickupRow(b.tNear([-12, 0, 15.6]), { count: 3, spread: 0.9 });
+  b.pickupRow(b.tNear([-24, 0, 30]), { count: 3, spread: 0.9 });
 
   b.aiPath({
     spacing: 3.0, topSpeed: 9.0, brake: 11.5, accel: 6.4,
-    tyre: 1.0, safety: 0.88, raceLine: true, carHalfWidth: 0.13,
+    tyre: 0.52, safety: 0.88, raceLine: true, carHalfWidth: 0.13,
   });
 }
