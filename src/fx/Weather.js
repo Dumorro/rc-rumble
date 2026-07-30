@@ -205,9 +205,13 @@ export class Weather {
       leafColors: [0x7f9a2f, 0xb8892c, 0xc9622a],
     };
 
-    this.moteCount = CONFIG.quality === 'low' ? 0
-      : CONFIG.quality === 'medium' ? 180
-        : CONFIG.quality === 'ultra' ? 640 : 360;
+    // Motes survive even on 'low': they are sub-pixel quads, so the fill cost is
+    // negligible and they are most of what makes an indoor track feel like a
+    // room rather than a diorama. God rays do not — those are big additive
+    // quads and they are the first thing to go.
+    this.moteCount = CONFIG.quality === 'low' ? 110
+      : CONFIG.quality === 'medium' ? 220
+        : CONFIG.quality === 'ultra' ? 640 : 380;
 
     this._motePos = null;
     this._moteInfo = null;

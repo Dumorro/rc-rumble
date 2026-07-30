@@ -1763,19 +1763,42 @@ export const AMBIENCE = {
   default: { bed: 'amb/default', reverb: 'room', events: [] },
 };
 
-/** Track / environment id → ambience key. */
+/**
+ * Track / environment id → ambience key.
+ * Tracks name their ambience freely (`'museum_hall'`, `'backyard_garden'`), and
+ * sometimes all we have is `environment.skybox`, so this resolves exact names,
+ * known aliases, the render system's skybox presets, and finally substrings.
+ */
 const AMB_ALIAS = {
-  toy_museum: 'museum', museum: 'museum', hall: 'museum', indoor: 'museum',
+  toy_museum: 'museum', museum: 'museum', museum_hall: 'museum', hall: 'museum',
+  gallery: 'museum', indoor: 'museum',
   garden: 'garden', backyard: 'garden', lawn: 'garden', park: 'garden', outdoor: 'garden',
   supermarket: 'supermarket', store: 'supermarket', shop: 'supermarket', market: 'supermarket',
   toy_box: 'room', toybox: 'room', bedroom: 'room', room: 'room', small: 'room',
+  // Sky.js / RenderSystem skybox presets.
+  studio: 'room', day: 'garden', sunset: 'garden', overcast: 'garden', night: 'garden',
 };
 
+const AMB_FUZZY = [
+  ['museum', 'museum'], ['gallery', 'museum'], ['hall', 'museum'], ['atrium', 'museum'],
+  ['garden', 'garden'], ['lawn', 'garden'], ['yard', 'garden'], ['park', 'garden'],
+  ['patio', 'garden'], ['outdoor', 'garden'], ['beach', 'garden'], ['pond', 'garden'],
+  ['market', 'supermarket'], ['store', 'supermarket'], ['shop', 'supermarket'],
+  ['aisle', 'supermarket'], ['mall', 'supermarket'], ['checkout', 'supermarket'],
+  ['room', 'room'], ['box', 'room'], ['bed', 'room'], ['kitchen', 'room'],
+  ['attic', 'room'], ['desk', 'room'], ['table', 'room'], ['toy', 'room'],
+];
+
+/** @param {string|{preset?:string,name?:string,id?:string}} id */
 export function resolveAmbience(id) {
   if (!id) return 'default';
-  const k = String(id).toLowerCase();
+  let k = id;
+  if (typeof k === 'object') k = k.preset ?? k.name ?? k.id ?? '';
+  k = String(k).toLowerCase().trim();
+  if (!k) return 'default';
   if (AMBIENCE[k]) return k;
   if (AMB_ALIAS[k]) return AMB_ALIAS[k];
+  for (let i = 0; i < AMB_FUZZY.length; i++) if (k.includes(AMB_FUZZY[i][0])) return AMB_FUZZY[i][1];
   return 'default';
 }
 

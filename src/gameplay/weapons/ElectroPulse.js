@@ -14,7 +14,7 @@ import * as THREE from 'three';
 import { clamp01 } from '../../core/MathUtils.js';
 import {
   carPos, carUp, effectsOf, projectilesOf, targetLeader, standingsOf,
-  hitCar, shake, emitSpawn, ramp,
+  hitCar, shake, emitSpawn, emitHit, ramp,
 } from './Common.js';
 
 const _from = new THREE.Vector3();
@@ -123,7 +123,7 @@ export const ElectroPulse = {
         fx.electro(o, ElectroPulse.splashStallTime, {
           sourceId: car?.id ?? -1, weaponId: 'electro',
         });
-        game?.bus?.emit('weapon:hit', {
+        emitHit(game, {
           carId: o.id, sourceId: car?.id ?? -1, weaponId: 'electro',
           worldPoint: _p, impulse: 0.4,
         });

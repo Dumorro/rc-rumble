@@ -98,7 +98,11 @@ export const REVERB_PRESETS = {
   },
 };
 
-/** Aliases so tracks can name their environment however they like. */
+/**
+ * Aliases so tracks can name their environment however they like — including
+ * with the *render* system's skybox preset names, which is what a TrackData
+ * usually has lying around (`environment.skybox`).
+ */
 const ALIASES = {
   toy_museum: 'museum', museum_hall: 'museum', hall: 'museum', indoor: 'museum',
   outdoor: 'garden', park: 'garden', lawn: 'garden', backyard: 'garden',
@@ -107,14 +111,93 @@ const ALIASES = {
   workshop: 'garage', basement: 'garage', concrete: 'garage',
   big: 'cavern', cathedral: 'cavern',
   dry: 'none', off: 'none',
+  // Sky.js / RenderSystem skybox presets.
+  studio: 'room', day: 'garden', sunset: 'garden', overcast: 'garden', night: 'garden',
 };
 
+/** Substring probes, tried in order when nothing matches exactly. */
+const FUZZY = [
+  ['museum', 'museum'], ['gallery', 'museum'], ['hall', 'museum'], ['atrium', 'museum'],
+  ['garden', 'garden'], ['lawn', 'garden'], ['yard', 'garden'], ['park', 'garden'],
+  ['patio', 'garden'], ['outdoor', 'garden'], ['beach', 'garden'], ['pond', 'garden'],
+  ['market', 'supermarket'], ['store', 'supermarket'], ['shop', 'supermarket'],
+  ['aisle', 'supermarket'], ['mall', 'supermarket'],
+  ['garage', 'garage'], ['workshop', 'garage'], ['basement', 'garage'], ['cellar', 'garage'],
+  ['cave', 'cavern'], ['cathedral', 'cavern'],
+  ['room', 'room'], ['box', 'room'], ['bed', 'room'], ['kitchen', 'room'],
+  ['attic', 'room'], ['desk', 'room'], ['table', 'room'], ['toy', 'room'],
+];
+
+/**
+ * Resolve any track-supplied name to a preset key.
+ * Accepts a string, or an object with `.preset` / `.name` / `.id`
+ * (which is the shape `TrackData.environment.skybox` usually takes).
+ */
 export function resolveReverbName(name) {
   if (!name) return 'room';
-  const k = String(name).toLowerCase();
+  let k = name;
+  if (typeof k === 'object') k = k.preset ?? k.name ?? k.id ?? '';
+  k = String(k).toLowerCase().trim();
+  if (!k) return 'room';
   if (REVERB_PRESETS[k]) return k;
   if (ALIASES[k]) return ALIASES[k];
+  for (let i = 0; i < FUZZY.length; i++) if (k.includes(FUZZY[i][0])) return FUZZY[i][1];
   return 'room';
+}
+
+/**
+ * Build a ReverbDesc from the **parametric** descriptor a TrackData carries:
+ * `TrackData.audio.reverb = { roomSize, damping, wet, preDelay }` (all 0..1
+ * except preDelay, which is seconds). This is the shape TrackBuilder emits.
+ *
+ * The hand-tuned preset chosen by `hint` (or by roomSize when there is no hint)
+ * supplies the *character* — early-reflection pattern, room modes, flutter,
+ * stereo width — and the track's numbers override the measurable quantities.
+ * That way a track only has to say "big and bright" to get a real hall.
+ *
+ * @param {{roomSize?:number, damping?:number, wet?:number, preDelay?:number,
+ *          rt60?:number, decay?:number, diffusion?:number, width?:number}} p
+ * @param {string} [hint] preset name / skybox / track id
+ * @returns {ReverbDesc & {name:string}}
+ */
+export function reverbDescFromParams(p, hint = null) {
+  const size = clamp01(fin(p?.roomSize, 0.5));
+  let baseKey = hint ? resolveReverbName(hint) : null;
+  // `resolveReverbName` falls back to 'room' for anything unknown; if the hint
+  // told us nothing useful, size is a better guide than a bad guess.
+  if (!baseKey || (baseKey === 'room' && !hintIsRoomy(hint))) {
+    baseKey = size >= 0.78 ? 'museum' : size >= 0.60 ? 'supermarket'
+      : size >= 0.40 ? 'garage' : 'room';
+  }
+  const base = REVERB_PRESETS[baseKey] ?? REVERB_PRESETS.room;
+
+  // rt60 from room size: 0.3 → 0.52 s, 0.55 → 1.3 s, 0.86 → 2.9 s, 1.0 → 3.8 s.
+  const rt60 = fin(p?.rt60, fin(p?.decay, 0.20 + 3.6 * size * size));
+  const desc = {
+    ...base,
+    rt60: clamp(rt60, 0.08, 5.0),
+    damping: clamp01(fin(p?.damping, base.damping)),
+    preDelay: clamp(fin(p?.preDelay, base.preDelay), 0, 0.12),
+    wet: clamp(fin(p?.wet, base.wet), 0, 1.5),
+    diffusion: clamp01(fin(p?.diffusion, base.diffusion)),
+    width: clamp01(fin(p?.width, base.width)),
+    // Bigger rooms have more, later reflections.
+    erCount: Math.round(base.erCount * lerp(0.7, 1.35, size)),
+    erSpread: base.erSpread * lerp(0.6, 1.5, size),
+  };
+  // Cache key: distinct per (character, size, damping) triple.
+  desc.name = `p:${baseKey}:${desc.rt60.toFixed(2)}:${desc.damping.toFixed(2)}`;
+  return desc;
+}
+
+/** Did the caller actually ask for a small room, or did we just default to one? */
+function hintIsRoomy(hint) {
+  if (!hint) return false;
+  let k = hint;
+  if (typeof k === 'object') k = k.preset ?? k.name ?? k.id ?? '';
+  k = String(k).toLowerCase();
+  return k === 'room' || k === 'small' || k === 'small_room' || k === 'studio'
+    || k.includes('room') || k.includes('box') || k.includes('bed');
 }
 
 const LENGTH_SCALE = { low: 0.40, medium: 0.68, high: 1.0, ultra: 1.12 };

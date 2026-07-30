@@ -29,7 +29,7 @@ import * as THREE from 'three';
 import CONFIG, { q } from '../core/Config.js';
 import { clamp, clamp01, lerp } from '../core/MathUtils.js';
 import { surfaceFX, MARK } from './SurfaceFX.js';
-import { SPR, ATLAS_COLS, ATLAS_ROWS } from './ParticleAtlas.js';
+import { markGrainTexture } from './ParticleAtlas.js';
 
 const VERT_SHADER = /* glsl */`
 precision highp float;
@@ -64,9 +64,8 @@ void main() {
 const FRAG_SHADER = /* glsl */`
 precision highp float;
 
-uniform sampler2D uAtlas;
-uniform vec2 uAtlasTiles;
-uniform vec2 uTile;         // atlas cell (col,row) for the mark grain
+uniform sampler2D uGrain;   // seamless, RepeatWrapping — see markGrainTexture()
+uniform vec2 uGrainScale;
 uniform float uEdgeSoft;
 
 varying vec2 vUv;
@@ -85,10 +84,9 @@ varying float vAge;
 #endif
 
 void main() {
-  // vUv.x runs across the ribbon (0..1), vUv.y runs along it and is used to
-  // scroll the grain so a long skid does not show an obvious tiling period.
-  vec2 cell = ( uTile + vec2( fract( vUv.x ), fract( vUv.y ) ) ) / uAtlasTiles;
-  float grain = texture2D( uAtlas, cell ).a;
+  // vUv.x runs across the ribbon (0..1), vUv.y runs along it and keeps counting
+  // up, so the grain scrolls and a long skid never shows a tiling period.
+  float grain = texture2D( uGrain, vUv * uGrainScale ).a;
 
   // Feather the ribbon edges — a hard-edged quad strip screams "decal".
   float edge = smoothstep( 0.0, uEdgeSoft, vUv.x ) * smoothstep( 0.0, uEdgeSoft, 1.0 - vUv.x );
@@ -112,6 +110,11 @@ void main() {
 }
 `;
 
+/** Ribbon-length coordinate wraps here so the float never loses precision. */
+const V_WRAP = 64;
+/** Must be an integer — see the uGrainScale uniform. */
+const V_GRAIN_SCALE_Y = 1;
+
 const _v = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _fwd = new THREE.Vector3();
@@ -124,13 +127,27 @@ const _up = new THREE.Vector3();
 class MarkWriter {
   constructor() {
     this.active = false;
+    /** Near edge of the quad currently being extended. */
     this.lastLx = 0; this.lastLy = 0; this.lastLz = 0;
     this.lastRx = 0; this.lastRy = 0; this.lastRz = 0;
     this.lastCx = 0; this.lastCy = 0; this.lastCz = 0;
-    this.lastV = 0;              // ribbon-length coordinate, for grain scrolling
+    /** Ribbon-length coordinate at the near edge, for grain scrolling. */
+    this.lastV = 0;
     this.lastAlpha = 0;
     this.lastSurface = -1;
     this.idle = 0;
+
+    // ── adaptive tessellation state ──
+    /** Ring slot of the quad we are extending, or -1. */
+    this.headSlot = -1;
+    /** Allocation stamp of that slot, so we notice if the ring recycled it. */
+    this.headSeq = -1;
+    /** Unit direction of the quad currently being extended. */
+    this.dirX = 0; this.dirY = 0; this.dirZ = 0;
+    /** Length of the quad so far, metres. */
+    this.headLen = 0;
+    /** Alpha at the near edge of the head quad. */
+    this.headAlpha0 = 0;
   }
   reset() {
     this.active = false;
@@ -138,39 +155,83 @@ class MarkWriter {
     this.lastAlpha = 0;
     this.lastSurface = -1;
     this.idle = 0;
+    this.headSlot = -1;
+    this.headSeq = -1;
+    this.headLen = 0;
   }
+  /** Stop extending the current quad without breaking the ribbon's anchor. */
+  commit() { this.headSlot = -1; this.headSeq = -1; this.headLen = 0; }
 }
 
 export class TireMarks {
   /**
    * @param {import('../core/Game.js').Game} game
-   * @param {{atlas:THREE.Texture|null, maxSegments?:number}} opts
+   * @param {{maxSegments?:number}} [opts]
    */
   constructor(game, opts = {}) {
     this.game = game;
     this.enabled = true;
 
     this.maxSegments = Math.max(64, opts.maxSegments ?? q(CONFIG.fx.tireMarkSegments) ?? 1024);
+    /** The configured fade — the ceiling, not necessarily what is in force. */
     this.fadeSeconds = CONFIG.fx.tireMarkFade ?? 14;
+    /**
+     * The fade actually being applied. When the segment ring is churning faster
+     * than `fadeSeconds` (eight cars sideways through a hairpin), a mark's slot
+     * gets recycled while the mark is still visible, which reads as a chunk of
+     * skid blinking out of existence. Rather than let that happen we shorten the
+     * fade to just under the ring's real turnover, so every mark reaches zero
+     * opacity before its slot is reused. Quiet laps get the full 14 s.
+     */
+    this.activeFade = this.fadeSeconds;
+    /** Never go below this, however hard the ring is churning. */
+    this.minFade = 2.5;
+    /** EMA of segments committed per second. */
+    this._emitRate = 0;
 
-    /** Minimum travel before a new quad is emitted, metres. */
-    this.minStep = 0.022;
-    /** Longest single quad; beyond this we break the ribbon (teleport/respawn). */
-    this.maxStep = 0.55;
+    /**
+     * Adaptive tessellation. A straight skid needs two triangles, not two
+     * hundred: we keep *extending* the head quad in place and only split it off
+     * when the ribbon actually bends or gets long. Without this, eight cars
+     * drifting at 6 m/s chew through the whole segment ring in under a second
+     * and the marks vanish long before `tireMarkFade`.
+     */
+    /** Split when the ribbon has turned this far from the head quad's axis. */
+    this.splitAngle = 9 * Math.PI / 180;
+    /** Split when the head quad reaches this length, metres. */
+    this.splitStep = 0.32;
+    /** Split when the alpha has drifted this far from the near edge. */
+    this.splitAlpha = 0.16;
+    /** Below this travel we do not even bother updating the head, metres. */
+    this.minStep = 0.010;
+    /** Beyond this in one frame it is a teleport, not a skid — break the ribbon. */
+    this.breakStep = 0.55;
     /** Skid intensity below which nothing is laid down. */
-    this.threshold = 0.12;
+    this.threshold = 0.16;
     /** How far above the surface the ribbon floats, metres. */
     this.lift = 0.0035;
+    /**
+     * Distance LOD: far-away cars get coarser tessellation. Nobody can see an
+     * 8 mm facet on a car 15 m away, and the segments are better spent on the
+     * player's own marks.
+     */
+    this.lodNear = 4.0;
+    this.lodFar = 16.0;
+    this.lodMaxScale = 4.0;
 
     this.time = 0;
     this.head = 0;
     this.live = 0;
+    /** Monotonic allocation counter, for stale-head detection. */
+    this._seq = 0;
+    /** Camera position, refreshed once per update. */
+    this._camX = 0; this._camY = 0; this._camZ = 0;
 
     /** @type {MarkWriter[]} indexed by carId*4 + wheelIndex */
     this.writers = [];
-    for (let i = 0; i < CONFIG.race.maxCars * 4; i++) this.writers.push(new MarkWriter());
+    for (let i = 0; i < Math.max(8, CONFIG.race.maxCars) * 4; i++) this.writers.push(new MarkWriter());
 
-    this._atlas = opts.atlas ?? null;
+    this._grain = null;
     this.geometry = null;
     this.material = null;
     this.mesh = null;
@@ -182,12 +243,15 @@ export class TireMarks {
     this._dirtyMin = Infinity;
     this._dirtyMax = -Infinity;
 
-    this.stats = { segments: 0, live: 0, emitted: 0 };
+    this.stats = { segments: 0, live: 0, emitted: 0, fade: this.fadeSeconds };
   }
 
   // ─────────────────────────────────────────────────────────── build
 
   init() {
+    this._grain = markGrainTexture(this.game?.assets, {
+      size: CONFIG.quality === 'low' ? 128 : 256,
+    });
     const n = this.maxSegments;
     const verts = n * 4;
 
@@ -226,15 +290,17 @@ export class TireMarks {
     const uniforms = THREE.UniformsUtils.merge([
       THREE.UniformsLib.fog,
       {
-        uAtlas: { value: null },
-        uAtlasTiles: { value: new THREE.Vector2(ATLAS_COLS, ATLAS_ROWS) },
-        uTile: { value: new THREE.Vector2(SPR.SCUFF % ATLAS_COLS, (SPR.SCUFF / ATLAS_COLS) | 0) },
+        uGrain: { value: null },
+        // uGrainScale.y MUST stay an integer. The ribbon's v coordinate is
+        // wrapped modulo V_WRAP on the CPU, and a non-integer y scale would put
+        // a visible grain discontinuity at every wrap.
+        uGrainScale: { value: new THREE.Vector2(1.6, V_GRAIN_SCALE_Y) },
         uNow: { value: 0 },
-        uFade: { value: this.fadeSeconds },
+        uFade: { value: this.activeFade },
         uEdgeSoft: { value: 0.30 },
       },
     ]);
-    uniforms.uAtlas.value = this._atlas;
+    uniforms.uGrain.value = this._grain;
 
     const mat = new THREE.ShaderMaterial({
       uniforms,
@@ -276,9 +342,10 @@ export class TireMarks {
     return this;
   }
 
-  setAtlas(tex) {
-    this._atlas = tex;
-    if (this.material) this.material.uniforms.uAtlas.value = tex;
+  /** Override the grain texture (debug / theming). */
+  setGrain(tex) {
+    this._grain = tex;
+    if (this.material) this.material.uniforms.uGrain.value = tex;
     return this;
   }
 
@@ -297,12 +364,43 @@ export class TireMarks {
     this.time += dt;
     this.material.uniforms.uNow.value = this.time;
 
+    const emittedBefore = this.stats.emitted;
+
     if (cars && dt > 0 && rate > 0.05) {
+      const cam = this.game?.camera;
+      if (cam) {
+        _v.setFromMatrixPosition(cam.matrixWorld);
+        this._camX = _v.x; this._camY = _v.y; this._camZ = _v.z;
+      }
       for (let c = 0; c < cars.length; c++) this._updateCar(cars[c], dt);
     }
 
     this._flush();
+    if (dt > 0) this._balanceFade(this.stats.emitted - emittedBefore, dt);
     this.stats.live = this.live;
+  }
+
+  /**
+   * Keep the fade shorter than the ring's turnover time. See `activeFade`.
+   * Smoothed hard, because `uFade` is global and a sudden change would visibly
+   * re-age every mark on the track at once.
+   */
+  _balanceFade(emittedThisFrame, dt) {
+    const inst = emittedThisFrame / dt;
+    this._emitRate = this._emitRate + (inst - this._emitRate) * Math.min(1, dt * 1.5);
+
+    const ringSeconds = this._emitRate > 1
+      ? this.maxSegments / this._emitRate
+      : Infinity;
+    let target = Math.min(this.fadeSeconds, ringSeconds * 0.85);
+    if (target < this.minFade) target = this.minFade;
+
+    // ~1.5 s time constant, and we shorten faster than we lengthen so a sudden
+    // pile-up cannot outrun the adjustment.
+    const k = target < this.activeFade ? 0.9 : 0.35;
+    this.activeFade += (target - this.activeFade) * Math.min(1, dt * k);
+    this.material.uniforms.uFade.value = this.activeFade;
+    this.stats.fade = this.activeFade;
   }
 
   _updateCar(car, dt) {
@@ -390,6 +488,7 @@ export class TireMarks {
     writer.active = true;
     writer.lastAlpha = 0;
     writer.lastSurface = wheel.surfaceId | 0;
+    writer.commit();
   }
 
   /**
@@ -441,31 +540,24 @@ export class TireMarks {
     return true;
   }
 
+  /**
+   * Extend this wheel's ribbon.
+   *
+   * The head quad is rewritten in place every frame; it is only committed and
+   * replaced when the ribbon bends past `splitAngle`, grows past `splitStep`, or
+   * the opacity has drifted enough that a single linear ramp would lie.
+   */
   _emit(writer, wheel, car, fx, intensity, speed) {
     if (!this._patch(wheel, car)) return;
 
     const cx = _v.x, cy = _v.y, cz = _v.z;
-    if (!writer.active) {
-      writer.lastLx = cx - _right.x; writer.lastLy = cy - _right.y; writer.lastLz = cz - _right.z;
-      writer.lastRx = cx + _right.x; writer.lastRy = cy + _right.y; writer.lastRz = cz + _right.z;
-      writer.lastCx = cx; writer.lastCy = cy; writer.lastCz = cz;
-      writer.active = true;
-      writer.lastAlpha = 0;
-      writer.lastSurface = wheel.surfaceId | 0;
-      return;
-    }
+
+    if (!writer.active) { this._restart(writer, wheel, cx, cy, cz); return; }
 
     const dx = cx - writer.lastCx, dy = cy - writer.lastCy, dz = cz - writer.lastCz;
     const dist = Math.hypot(dx, dy, dz);
     if (dist < this.minStep) return;
-    if (dist > this.maxStep) {
-      // teleport / respawn / huge hitch — restart the ribbon
-      writer.lastLx = cx - _right.x; writer.lastLy = cy - _right.y; writer.lastLz = cz - _right.z;
-      writer.lastRx = cx + _right.x; writer.lastRy = cy + _right.y; writer.lastRz = cz + _right.z;
-      writer.lastCx = cx; writer.lastCy = cy; writer.lastCz = cz;
-      writer.lastAlpha = 0;
-      return;
-    }
+    if (dist > this.breakStep) { this._restart(writer, wheel, cx, cy, cz); return; }
 
     // ── colour & opacity for this surface ──
     const mc = fx.markColor;
@@ -488,26 +580,113 @@ export class TireMarks {
     const nlx = cx - _right.x, nly = cy - _right.y, nlz = cz - _right.z;
     const nrx = cx + _right.x, nry = cy + _right.y, nrz = cz + _right.z;
 
-    const v0 = writer.lastV;
-    const v1 = v0 + dist / Math.max(0.055, (wheel.width ?? 0.028) * 2.2);
+    const inv = 1 / dist;
+    const ndx = dx * inv, ndy = dy * inv, ndz = dz * inv;
 
-    this._writeQuad(
-      writer.lastLx, writer.lastLy, writer.lastLz,
-      writer.lastRx, writer.lastRy, writer.lastRz,
-      nrx, nry, nrz,
-      nlx, nly, nlz,
-      v0, v1,
-      mc[0], mc[1], mc[2],
-      writer.lastAlpha, alpha,
-      lifeMul,
-    );
+    // Distance LOD on both split criteria.
+    const lod = this._lodScale(cx, cy, cz);
+    const splitStep = this.splitStep * lod;
+    const cosLimit = Math.cos(Math.min(this.splitAngle * lod, 1.2));
 
+    const headValid = writer.headSlot >= 0
+      && (this._seq - writer.headSeq) < this.maxSegments;
+
+    let extend = headValid;
+    if (extend) {
+      const newLen = writer.headLen + dist;
+      const bend = ndx * writer.dirX + ndy * writer.dirY + ndz * writer.dirZ;
+      if (newLen > splitStep) extend = false;
+      else if (bend < cosLimit) extend = false;
+      else if (Math.abs(alpha - writer.headAlpha0) > this.splitAlpha) extend = false;
+    }
+
+    const vScale = 1 / Math.max(0.055, (wheel.width ?? 0.028) * 2.2);
+    const vNext = writer.lastV + dist * vScale;
+
+    if (extend) {
+      writer.headLen += dist;
+      this._updateQuadFar(writer.headSlot, nrx, nry, nrz, nlx, nly, nlz, vNext, alpha);
+      // Do NOT wrap v while a quad is open: v must stay monotonic across a
+      // single quad or the grain mirrors inside it.
+      writer.lastV = vNext;
+    } else {
+      // Commit whatever the old head already holds and start a fresh quad from
+      // the current tip, so the ribbon stays watertight across the split.
+      const slot = this._allocSlot();
+      this._writeQuad(slot,
+        writer.lastLx, writer.lastLy, writer.lastLz,
+        writer.lastRx, writer.lastRy, writer.lastRz,
+        nrx, nry, nrz,
+        nlx, nly, nlz,
+        writer.lastV, vNext,
+        mc[0], mc[1], mc[2],
+        writer.lastAlpha, alpha,
+        lifeMul);
+      writer.headSlot = slot;
+      writer.headSeq = this._seq;
+      writer.headLen = dist;
+      writer.dirX = ndx; writer.dirY = ndy; writer.dirZ = ndz;
+      writer.headAlpha0 = writer.lastAlpha;
+      // Safe to wrap here: the quad we just wrote is complete, and V_WRAP is an
+      // integer multiple of the grain period so the seam is invisible.
+      writer.lastV = vNext % V_WRAP;
+      this.stats.emitted++;
+    }
+
+    // The tip always advances; the head quad's near edge lives in the buffer.
     writer.lastLx = nlx; writer.lastLy = nly; writer.lastLz = nlz;
     writer.lastRx = nrx; writer.lastRy = nry; writer.lastRz = nrz;
     writer.lastCx = cx; writer.lastCy = cy; writer.lastCz = cz;
-    writer.lastV = v1 % 64;
     writer.lastAlpha = alpha;
-    this.stats.emitted++;
+  }
+
+  /** Break and re-anchor the ribbon at the current patch. */
+  _restart(writer, wheel, cx, cy, cz) {
+    writer.lastLx = cx - _right.x; writer.lastLy = cy - _right.y; writer.lastLz = cz - _right.z;
+    writer.lastRx = cx + _right.x; writer.lastRy = cy + _right.y; writer.lastRz = cz + _right.z;
+    writer.lastCx = cx; writer.lastCy = cy; writer.lastCz = cz;
+    writer.active = true;
+    writer.lastAlpha = 0;
+    writer.headAlpha0 = 0;
+    writer.lastSurface = wheel.surfaceId | 0;
+    writer.commit();
+  }
+
+  /** How much coarser may this ribbon be, given its distance from the camera. */
+  _lodScale(x, y, z) {
+    const dx = x - this._camX, dy = y - this._camY, dz = z - this._camZ;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (d <= this.lodNear) return 1;
+    const t = clamp01((d - this.lodNear) / (this.lodFar - this.lodNear));
+    return 1 + t * (this.lodMaxScale - 1);
+  }
+
+  /** Take the next slot in the ring. */
+  _allocSlot() {
+    const s = this.head;
+    this.head = (this.head + 1) % this.maxSegments;
+    if (this.live < this.maxSegments) this.live++;
+    this._seq++;
+    return s;
+  }
+
+  /** Move the far edge of an existing quad (the in-place extension path). */
+  _updateQuadFar(slot, rx, ry, rz, lx, ly, lz, v1, alpha1) {
+    const p = slot * 12;
+    const P = this._pos;
+    P[p + 6] = rx; P[p + 7] = ry; P[p + 8] = rz;
+    P[p + 9] = lx; P[p + 10] = ly; P[p + 11] = lz;
+
+    const u = slot * 8;
+    this._uv[u + 5] = v1;
+    this._uv[u + 7] = v1;
+
+    const c = slot * 16;
+    this._col[c + 11] = alpha1;
+    this._col[c + 15] = alpha1;
+
+    if (slot < this._dirtyMin) this._dirtyMin = slot;
+    if (slot > this._dirtyMax) this._dirtyMax = slot;
   }
 
   /**
@@ -515,13 +694,10 @@ export class TireMarks {
    * Vertex order: (0) prev-left, (1) prev-right, (2) new-right, (3) new-left.
    */
   _writeQuad(
+    s,
     ax, ay, az, bx, by, bz, cx2, cy2, cz2, dx2, dy2, dz2,
     v0, v1, r, g, b, alpha0, alpha1, lifeMul,
   ) {
-    const s = this.head;
-    this.head = (this.head + 1) % this.maxSegments;
-    if (this.live < this.maxSegments) this.live++;
-
     const p = s * 12;
     const P = this._pos;
     P[p] = ax; P[p + 1] = ay; P[p + 2] = az;
@@ -586,10 +762,14 @@ export class TireMarks {
   /** Wipe the marks themselves. */
   clear() {
     this.resetAll();
+    this._emitRate = 0;
+    this.activeFade = this.fadeSeconds;
+    if (this.material) this.material.uniforms.uFade.value = this.activeFade;
     const F = this._fade;
     if (F) for (let i = 0; i < F.length; i += 2) F[i] = -1e6;
     this.head = 0;
     this.live = 0;
+    this._seq = 0;
     if (this.attrFade) {
       this.attrFade.clearUpdateRanges();
       this.attrFade.needsUpdate = true;

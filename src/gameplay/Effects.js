@@ -54,7 +54,12 @@ export const EFFECT_KEYS = Object.freeze([
 const DEF = {
   boost: {
     cap: 8.0, fade: 0.12,
-    mods: { maxSpeed: 1.42, grip: 1.10, downforce: 1.30, antiRoll: 1.10 },
+    // `torque` is where boost's PUSH lives, so it goes through the tyres and
+    // stays grip-limited. It used to be a direct body force here AND a 1.85x
+    // multiplier in Car.js — two independent boosts compounding on a car with a
+    // 9 m/s top speed. The force also bypassed the contact patch entirely,
+    // which made turbo on ice accelerate like turbo on wood.
+    mods: { torque: 1.85, maxSpeed: 1.42, grip: 1.10, downforce: 1.30, antiRoll: 1.10 },
   },
   frozen: {
     cap: 6.0, fade: 0.18,
@@ -99,10 +104,15 @@ export class EffectsLayer {
     this.cars = [];
 
     // ── tuning ──────────────────────────────────────────────────────────
-    /** Extra forward acceleration while boosting, m/s². */
-    this.boostAccel = 16.0;
+    /**
+     * Extra forward acceleration while boosting, m/s². This is applied ON TOP
+     * of whatever the vehicle sim does with `effects.boost` / `effectMods`
+     * (Car.js currently multiplies drive torque by 1.85), so it is deliberately
+     * modest — it supplies the *shove*, the drivetrain supplies the *pull*.
+     */
+    this.boostAccel = 7.0;
     /** One-shot kick when a boost starts, m/s. */
-    this.boostKick = 2.1;
+    this.boostKick = 1.6;
     /** Fraction of boost thrust that still applies with no wheels down. */
     this.boostAirFactor = 0.30;
     /** Deceleration applied per unit of throttle while the motor is stalled. */
@@ -145,6 +155,16 @@ export class EffectsLayer {
     }
     car.effectMods ??= { ...NEUTRAL_MODS };
     car.effectVisual ??= { boost: 0, frost: 0, shield: 0, squash: 0, spark: 0, soak: 0, blind: 0 };
+    // Authoritative timer store. `car.effects` is a PUBLIC surface that other
+    // systems both read and write — Car.js counts it down itself, Respawn.js
+    // raises `shielded` for post-respawn invulnerability. Keeping our own copy
+    // and writing (not decrementing) `car.effects` each step means an effect
+    // lasts exactly as long as it should no matter how many other tickers
+    // touch it, while an external *raise* is still honoured.
+    car._fxTimers ??= {
+      boost: 0, frozen: 0, shielded: 0, squashed: 0, electro: 0, oiled: 0,
+      blinded: 0, soaked: 0,
+    };
     if (car.shieldCharges == null) car.shieldCharges = 0;
     if (!car._fxBase && car.body) {
       car._fxBase = {
@@ -162,10 +182,12 @@ export class EffectsLayer {
     if (!car) return;
     this.ensure(car);
     const e = car.effects;
+    const store = car._fxTimers;
     for (let i = 0; i < EFFECT_KEYS.length; i++) {
       const k = EFFECT_KEYS[i];
-      if (e[k] > 0) this._emitEnd(car, k);
+      if (e[k] > 0 || store[k] > 0) this._emitEnd(car, k);
       e[k] = 0;
+      store[k] = 0;
     }
     car.shieldCharges = 0;
     const v = car.effectVisual;
@@ -196,11 +218,13 @@ export class EffectsLayer {
     if (!def) return false;
     this.ensure(car);
     const e = car.effects;
-    const was = e[key];
+    const store = car._fxTimers;
+    const was = Math.max(e[key], store[key]);
     const mode = opts?.mode ?? 'max';
     let next = mode === 'add' ? was + seconds : mode === 'set' ? seconds : Math.max(was, seconds);
     next = Math.min(def.cap, next);
     e[key] = next;
+    store[key] = next;
 
     if (was <= 0 && next > 0) {
       this._onStart(car, key, next, opts);
@@ -217,8 +241,9 @@ export class EffectsLayer {
   /** Force an effect to end right now. */
   clear(car, key) {
     if (!car?.effects) return;
-    if (car.effects[key] > 0) {
+    if (car.effects[key] > 0 || (car._fxTimers?.[key] ?? 0) > 0) {
       car.effects[key] = 0;
+      if (car._fxTimers) car._fxTimers[key] = 0;
       this._emitEnd(car, key);
       if (key === 'shielded') car.shieldCharges = 0;
     }
@@ -315,16 +340,28 @@ export class EffectsLayer {
   tryDamage(car, { sourceId = -1, weaponId = null, worldPoint = null, pierce = false } = {}) {
     if (!car) return false;
     this.ensure(car);
+    // The vehicle layer grants a short invulnerability after a respawn. Respect
+    // it without burning a shield charge — being shot the instant you are put
+    // back on the road is the least fun thing in a kart racer.
+    if (!pierce && (car.invulnerable ?? 0) > 0) {
+      this._bus?.emit('weapon:blocked', {
+        carId: car.id, sourceId, weaponId, invulnerable: true,
+        worldPoint: (worldPoint ?? car.body?.position)?.clone() ?? null,
+      });
+      return false;
+    }
     if (!pierce && car.effects.shielded > 0 && (car.shieldCharges ?? 0) > 0) {
       car.shieldCharges--;
       if (car.shieldCharges <= 0) {
         car.effects.shielded = 0;
+        if (car._fxTimers) car._fxTimers.shielded = 0;
         this._emitEnd(car, 'shielded');
       }
       car.effectVisual.shield = 1;   // flare the bubble as it pops
       this._bus?.emit('weapon:blocked', {
         carId: car.id, sourceId, weaponId,
-        worldPoint: worldPoint ?? car.body?.position ?? null,
+        // Private copy: callers pass module scratch vectors.
+        worldPoint: (worldPoint ?? car.body?.position)?.clone() ?? null,
       });
       this._bus?.emit('camera:shake', { amount: 0.18, duration: 0.18 });
       return false;
@@ -350,19 +387,31 @@ export class EffectsLayer {
     let anyActive = false;
 
     // ── tick timers, accumulate multipliers ──
+    // The store is authoritative; `car.effects` is written, never decremented,
+    // so another system counting it down cannot halve an effect's duration.
+    // An external *raise* (Respawn's invulnerability shield) is still adopted.
+    const store = car._fxTimers;
     let grip = 1, torque = 1, steer = 1, brake = 1, maxSpeed = 1, downforce = 1, antiRoll = 1;
     for (let i = 0; i < EFFECT_KEYS.length; i++) {
       const k = EFFECT_KEYS[i];
-      let t = e[k];
-      if (t <= 0) continue;
+      let t = store[k];
+      const ext = e[k];
+      if (ext > t + 1e-6) t = Math.min(DEF[k].cap, ext);
+      if (t <= 0) {
+        if (ext !== 0) e[k] = 0;
+        store[k] = 0;
+        continue;
+      }
       t -= dt;
       if (t <= 0) {
         e[k] = 0;
+        store[k] = 0;
         if (k === 'shielded') car.shieldCharges = 0;
         this._emitEnd(car, k);
         continue;
       }
       e[k] = t;
+      store[k] = t;
       anyActive = true;
       const m = DEF[k].mods;
       if (m.grip !== undefined) grip *= m.grip;
@@ -401,9 +450,9 @@ export class EffectsLayer {
       const authority = air + (1 - air) * ground;
       // Ease the last 25% out so the drop-off is not a cliff.
       const taper = clamp01(e.boost / 0.55);
-      body.getForward(_fwd);
       body.wake();
-      body.applyForce(_tmp.copy(_fwd).multiplyScalar(this.boostAccel * authority * taper * body.mass));
+      // NO forward force here. Boost's push is `mods.torque` and is delivered
+      // by the vehicle sim through the contact patch — see DEF.boost.
       // Push the nose down a hair so boosting over a crest does not launch you.
       if (ground > 0.5) {
         body.getUp(_up);
@@ -412,12 +461,8 @@ export class EffectsLayer {
     }
 
     if (e.electro > 0) {
-      // Kill the drivetrain: cancel whatever the throttle is trying to do.
-      const thr = clamp01(car.throttle ?? 0);
-      if (thr > 0.01) {
-        body.getForward(_fwd);
-        body.applyForce(_tmp.copy(_fwd).multiplyScalar(-this.stallDecel * thr * body.mass));
-      }
+      // The drivetrain kill is `mods.torque = 0`, applied by the vehicle sim.
+      // A counter-force here would have been a second, grip-bypassing brake.
       // Buzzing jitter — small, high frequency, unmistakable.
       const j = 0.55;
       body.applyTorque(_tmp.set(
@@ -425,16 +470,9 @@ export class EffectsLayer {
       ));
     }
 
-    if (torque < 0.999) {
-      // Generic torque haircut for squashed/frozen, in case the vehicle sim
-      // has not adopted effectMods yet.
-      const thr = clamp01(car.throttle ?? 0);
-      if (thr > 0.01 && e.electro <= 0) {
-        body.getForward(_fwd);
-        body.applyForce(_tmp.copy(_fwd)
-          .multiplyScalar(-this.stallDecel * 0.55 * (1 - torque) * thr * body.mass));
-      }
-    }
+    // (The generic torque haircut that used to live here was a stand-in for the
+    // vehicle sim not reading effectMods. It does now, so the haircut would be
+    // a double-application.)
 
     if (grip < 0.7) {
       // Destroyed grip: let the back end wander instead of tracking straight.

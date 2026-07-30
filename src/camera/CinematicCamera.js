@@ -441,8 +441,12 @@ export class CinematicCamera {
   _setupReplay(ctx, fromPose) {
     const cs = ctx?.carState;
     this.duration = 1.25;
-    const hint = this.director?._crashPoint;
-    if (hint) this.anchor.copy(hint);
+    // `_crashPoint` is a persistent Vector3, so it is ALWAYS truthy — the flag is
+    // what says whether it holds a real impact. Without this check, a replay
+    // triggered any other way (a debug setMode, a UI hook) would orbit the world
+    // origin instead of the car.
+    const dir = this.director;
+    if (dir?._hasCrashPoint) this.anchor.copy(dir._crashPoint);
     else if (cs?.valid) this.anchor.copy(cs.position);
     else { this._done = true; return; }
 

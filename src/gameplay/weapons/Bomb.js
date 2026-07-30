@@ -26,7 +26,7 @@ import { buildBombMesh } from '../VisualKit.js';
 import {
   carPos, carForward, carUp, carVelocity, blast, hitCar,
   effectsOf, projectilesOf, targetAhead, targetBehind,
-  shake, emitSpawn, emitExpire, ramp, fieldT,
+  shake, emitSpawn, emitExpire, emitHit, ramp, fieldT,
 } from './Common.js';
 
 const _p = new THREE.Vector3();
@@ -308,8 +308,9 @@ function transfer(e, game, to, point, closing) {
 
   game?.bus?.emit('bomb:transfer', {
     fromId: from?.id ?? -1, toId: to.id, fuse: d.fuse, closing,
+    position: point.clone(),
   });
-  game?.bus?.emit('weapon:hit', {
+  emitHit(game, {
     carId: to.id, sourceId: from?.id ?? -1, weaponId: 'bomb',
     worldPoint: point, impulse: 0.6,
   });
@@ -368,7 +369,7 @@ function explode(e, game) {
     shake: 0.9,
   });
 
-  game?.bus?.emit('bomb:explode', { carId: holder?.id ?? -1, position: _p });
+  game?.bus?.emit('bomb:explode', { carId: holder?.id ?? -1, position: _p.clone() });
   shake(game, 0.85, 0.45);
   void clamp; void fieldT;
 }

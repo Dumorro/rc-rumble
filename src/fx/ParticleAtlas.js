@@ -17,7 +17,7 @@
 
 import * as THREE from 'three';
 import { RNG, TAU, clamp01, lerp } from '../core/MathUtils.js';
-import { fbm2p, worleyF1 } from '../render/noise/index.js';
+import { fbm2p, fbm2ap, worleyF1 } from '../render/noise/index.js';
 
 export const ATLAS_COLS = 8;
 export const ATLAS_ROWS = 8;
@@ -934,6 +934,49 @@ export function hazeNoiseTexture(assets, opts = {}) {
   return assets.texture(`fx/haze@${size}`, (ctx) => drawHazeNoise(ctx, size), {
     size, srgb: false, wrap: THREE.RepeatWrapping, flipY: false, mipmaps: true,
   });
+}
+
+/**
+ * Seamless, tileable grain for the tyre-mark ribbons.
+ *
+ * This deliberately does NOT live in the atlas. A ribbon scrolls its v
+ * coordinate over many tile repeats, which in an atlas would need `fract()` in
+ * the fragment shader — and `fract()` breaks the texture derivatives, putting a
+ * blurred seam at every wrap. A standalone RepeatWrapping texture samples
+ * cleanly at every mip level.
+ *
+ * The pattern is anisotropic on purpose: fine longitudinal striations (the tread
+ * grooves smeared along the direction of travel) over slow blotches (uneven
+ * rubber deposit / displaced material).
+ */
+export function markGrainTexture(assets, opts = {}) {
+  if (!assets) return null;
+  const size = opts.size ?? 256;
+  return assets.texture(`fx/markGrain@${size}`, (ctx, s) => {
+    const img = ctx.createImageData(s, s);
+    const d = img.data;
+    for (let y = 0; y < s; y++) {
+      const v = y / s;
+      for (let x = 0; x < s; x++) {
+        const u = x / s;
+        // longitudinal striations: high frequency across, low frequency along
+        const stripes = fbm2ap(u, v, 26, 3, 4, 2.0, 0.55, 17) * 0.5 + 0.5;
+        // slow blotches of uneven deposit
+        const blotch = fbm2p(u * 3, v * 3, 3, 4, 2.0, 0.55, 91) * 0.5 + 0.5;
+        // occasional bald patches where the tyre skipped
+        const skip = clamp01(worleyF1(u * 5, v * 5, 5, 33) * 2.1);
+
+        let a = 0.42 + 0.36 * stripes + 0.30 * blotch;
+        a *= 0.55 + 0.45 * skip;
+        a = clamp01(a);
+
+        const i = (y * s + x) * 4;
+        d[i] = 255; d[i + 1] = 255; d[i + 2] = 255;
+        d[i + 3] = Math.round(a * 255);
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }, { size, srgb: false, wrap: THREE.RepeatWrapping, flipY: false, mipmaps: true });
 }
 
 export default particleAtlas;

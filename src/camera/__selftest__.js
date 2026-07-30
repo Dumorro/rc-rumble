@@ -210,6 +210,26 @@ bus.emit('car:land', { carId: 0, impactSpeed: 7, worldPoint: car.body.position.c
 for (let i = 0; i < 60; i++) dir.lateUpdate(1 / 60, 0, 1 / 60);
 ok(dir.mode === 'chase', `big air returns to chase, got ${dir.mode}`);
 
+// ── 5b. derived landing: a vehicle build that never emits 'car:land' ─────────
+dir.setMode('chase', 0); dir.snap();
+dir.shaker.reset();
+dir._lastLandEvent = -100;
+car.airborne = true; car.airTime = 0;
+for (let i = 0; i < 30; i++) {
+  car.airTime += 1 / 60;
+  car.body.velocity.set(0, -6, -4);
+  car.body.position.y = 0.4;
+  car.group.position.copy(car.body.position);
+  dir.lateUpdate(1 / 60, 0, 1 / 60);
+}
+car.airborne = false; car.airTime = 0;
+car.body.velocity.set(0, 0, -4);
+car.body.position.y = 0.06; car.group.position.copy(car.body.position);
+dir.lateUpdate(1 / 60, 0, 1 / 60);
+ok(dir.shaker.trauma > 0.05,
+  `derived landing thumps without a car:land event, trauma ${dir.shaker.trauma.toFixed(3)}`);
+for (let i = 0; i < 180; i++) dir.lateUpdate(1 / 60, 0, 1 / 60);
+
 // ── 6. crash replay (gated) ─────────────────────────────────────────────────
 dir._raceTime = 10;
 dir._lastCrash = -100;
@@ -303,9 +323,15 @@ ok(dir.mode === 'chase', `race:start hands over to chase, got ${dir.mode}`);
 dir.autoIntro = false;
 
 // ── 9. explicit modes, free cam, respawn, teardown ──────────────────────────
-for (const m of ['cinematic', 'podium', 'free', 'bumper', 'cockpit', 'chaseFar', 'chase']) {
+// 'replay' is included on purpose: entered WITHOUT a crash it must still orbit the
+// car, not the world origin (the crash point is a persistent vector + a flag).
+for (const m of ['cinematic', 'podium', 'replay', 'free', 'bumper', 'cockpit', 'chaseFar', 'chase']) {
   dir.setMode(m, 0.2);
   for (let i = 0; i < 40; i++) dir.lateUpdate(1 / 60, 0, 1 / 60);
+  if (m === 'replay') {
+    const d = camera.position.distanceTo(car.body.position);
+    ok(d < 3.0, `replay without a crash orbits the car, dist ${d.toFixed(2)}`);
+  }
   ok(dir.mode === m, `setMode(${m}) → ${dir.mode}`);
   finite(camera.position.x, `${m} camera x`);
   finite(camera.quaternion.w, `${m} camera quat`);

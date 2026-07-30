@@ -71,6 +71,7 @@ export class Listener {
     this._enclosureRaw = 0;
     this._hasPrev = false;
     this._lastMuffleApplied = -1;
+    this._lastSubApplied = -1;
 
     // Muffle chain nodes (created in _build).
     this.input = null;
@@ -216,8 +217,10 @@ export class Listener {
 
   _applyMuffle() {
     const m = this.muffle;
-    if (Math.abs(m - this._lastMuffleApplied) < 0.002) return;
+    if (Math.abs(m - this._lastMuffleApplied) < 0.002
+      && Math.abs(this.submerged - this._lastSubApplied) < 0.004) return;
     this._lastMuffleApplied = m;
+    this._lastSubApplied = this.submerged;
     const now = this.ctx.currentTime;
     const sub = this.submerged;
 

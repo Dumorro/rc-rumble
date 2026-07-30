@@ -142,8 +142,10 @@ function makeChunkGeometry(seed = 1) {
     }
     pos.setXYZ(i, j[0], j[1], j[2]);
   }
-  const geo = base.toNonIndexed();
-  base.dispose();
+  // PolyhedronGeometry is already non-indexed, so every triangle owns its
+  // vertices and computeVertexNormals() gives us flat per-face shading.
+  const geo = base.index ? base.toNonIndexed() : base;
+  if (geo !== base) base.dispose();
   geo.computeVertexNormals();
   return geo;
 }

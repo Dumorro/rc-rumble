@@ -20,5 +20,6 @@ export { CameraShake } from './CameraShake.js';
 export { CameraPose, blendPose, framingUp, dirFromYaw, yawOf, WORLD_UP } from './CameraPose.js';
 export { CarState } from './CarState.js';
 export {
-  Spring, AngleSpring, Vec3Spring, springStep, approach, approachAngle, wrapPi, omegaForSettle,
+  Spring, AngleSpring, Vec3Spring, springStep, approach, approachAngle, wrapPi,
+  omegaForSettle, lagCoefficient, addLagCompensation,
 } from './Spring.js';

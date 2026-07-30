@@ -114,8 +114,13 @@ export const LAYER = Object.freeze({
 const LAYER_COUNT = 6;
 const LAYER_NAMES = ['add', 'alpha', 'lit', 'streak', 'ground', 'haze'];
 
-/** Fraction of the global particle budget each layer gets. */
-export const LAYER_SHARE = [0.30, 0.24, 0.26, 0.12, 0.05, 0.03];
+/**
+ * Fraction of the global particle budget each layer gets.
+ * GROUND gets a bigger slice than its visual weight suggests because water
+ * wakes, foam and shockwave rings all land there and a car ploughing through a
+ * puddle will otherwise starve the rings.
+ */
+export const LAYER_SHARE = [0.28, 0.24, 0.26, 0.12, 0.08, 0.02];
 
 /** Soft-depth-fade distance as a multiple of the particle's world size. */
 const LAYER_SOFT = [0.55, 0.75, 1.35, 0.30, 1.10, 1.00];
@@ -383,8 +388,11 @@ void main() {
   vec2 w2 = texture2D( uNoise, quv * 3.3 - vec2( uTime * 0.07, uTime * 0.63 ) ).rg * 2.0 - 1.0;
   vec2 warp = ( w1 + w2 * 0.55 ) * uWarp;
 
-  vec4 tex = texture2D( uAtlas, vUv + warp * 0.05 );
-  float mask = tex.a * vColor.a;
+  // The falloff is computed analytically rather than sampled from the atlas:
+  // warping an atlas lookup would drag in the neighbouring tiles, and a gaussian
+  // is both cheaper and exactly the shape we want.
+  float r = length( vQuad + warp * 0.06 ) * 2.0;
+  float mask = exp( -3.6 * r * r ) * vColor.a;
   if ( mask < 0.004 ) discard;
   mask *= rcSoftFade();
 
@@ -702,6 +710,23 @@ export class ParticleSystem {
     this.sizeScale = 1;
 
     this._softEnabled = false;
+    /**
+     * Consecutive frames the depth-resolve pass has been running. The resolve
+     * target holds *last* frame's depth, so a pass we just switched on is still
+     * full of stale content for one frame.
+     */
+    this._softStable = 0;
+    /**
+     * Ask PostFX to keep its linear-depth pass alive for us. PostFX only runs
+     * the resolve when AO, motion blur or DOF want it — and at 'low' and
+     * 'medium' none of them do, which would lose the soft-particle fade on
+     * exactly the hardware where dust sits closest to the floor and hard
+     * intersections are most obvious. The pass is one full-screen R16F blit
+     * (~0.2 ms at 900p); we ask for it from 'medium' up, and we stop asking the
+     * moment the renderer's adaptive governor starts shedding quality.
+     * Set to false to leave PostFX entirely alone.
+     */
+    this.requestDepthPass = CONFIG.quality !== 'low';
     this._resolution = new THREE.Vector2(1920, 1080);
     this._unsubResize = null;
 
@@ -985,8 +1010,20 @@ export class ParticleSystem {
   }
 
   _refreshDepth() {
-    const pass = this.game?.renderer?.postfx?.passes?.depthResolve;
-    const ok = !!(pass && pass.enabled && pass.texture);
+    const renderer = this.game?.renderer;
+    const pass = renderer?.postfx?.passes?.depthResolve;
+
+    if (pass && pass.texture && this.requestDepthPass && !pass.enabled) {
+      // See `requestDepthPass`. PostFX recomputes this whenever its own quality
+      // knobs change, so the request is re-made every frame rather than latched.
+      const step = renderer.adaptive?.step ?? 0;
+      if (step < 3) pass.enabled = true;
+    }
+
+    const running = !!(pass && pass.enabled && pass.texture);
+    this._softStable = running ? (this._softStable < 3 ? this._softStable + 1 : 3) : 0;
+    const ok = this._softStable >= 2;
+
     this._softEnabled = ok;
     for (let i = 0; i < this.layers.length; i++) {
       const u = this.layers[i].material.uniforms;

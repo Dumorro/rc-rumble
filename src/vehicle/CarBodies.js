@@ -239,10 +239,10 @@ export function revolveX(prof, tread, segs, mod) {
 }
 
 /** A swept tube through a list of [x,y,z] points. */
-export function tube(points, radius, tubeSegs = 7, pathSegs = null, closed = false) {
+export function tube(points, radius, tubeSegs = 5, pathSegs = null, closed = false) {
   const pts = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
   const curve = new THREE.CatmullRomCurve3(pts, closed, 'catmullrom', 0.4);
-  const seg = pathSegs ?? Math.max(6, points.length * 5);
+  const seg = pathSegs ?? Math.max(5, Math.round(points.length * 2.6));
   return new THREE.TubeGeometry(curve, seg, radius, tubeSegs, closed);
 }
 
@@ -358,12 +358,12 @@ function addBumper(b, key, { z, y, halfW, radius = 0.0055, wrap = 0.024, drop = 
 function addLamp(b, lensKey, { x, y, z, r, depth = 0.006, bezel = true, flat = false, dir = null }) {
   const face = dir ?? (z > 0 ? 1 : -1);
   const lens = flat
-    ? new THREE.CylinderGeometry(r, r * 0.94, depth, 12, 1)
-    : new THREE.SphereGeometry(r, 12, 8, 0, TAU, 0, Math.PI * 0.5);
+    ? new THREE.CylinderGeometry(r, r * 0.94, depth, 10, 1)
+    : new THREE.SphereGeometry(r, 10, 5, 0, TAU, 0, Math.PI * 0.5);
   if (flat) b.add(lensKey, lens, { pos: [x, y, z], rot: [Math.PI * 0.5, 0, 0] });
   else b.add(lensKey, lens, { pos: [x, y, z], rot: [face < 0 ? -Math.PI * 0.5 : Math.PI * 0.5, 0, 0] });
   if (bezel) {
-    b.add('chrome', new THREE.TorusGeometry(r * 1.06, r * 0.16, 6, 14), { pos: [x, y, z] });
+    b.add('chrome', new THREE.TorusGeometry(r * 1.06, r * 0.16, 4, 12), { pos: [x, y, z] });
   }
 }
 
@@ -441,16 +441,16 @@ function addMotor(b, { x = 0, y, z, r = 0.013, len = 0.030 }) {
   b.add('dark', can, { pos: [x, y, z], rot: [0, 0, Math.PI * 0.5] });
   b.add('chrome', new THREE.CylinderGeometry(r * 0.36, r * 0.36, len * 0.18, 10),
     { pos: [x + len * 0.56, y, z], rot: [0, 0, Math.PI * 0.5] });
-  b.add('accent', new THREE.TorusGeometry(r * 1.02, r * 0.10, 6, 16),
+  b.add('accent', new THREE.TorusGeometry(r * 1.02, r * 0.10, 4, 12),
     { pos: [x - len * 0.22, y, z], rot: [0, Math.PI * 0.5, 0] });
 }
 
 /** A seated driver: helmet, visor, shoulders, and (optionally) arms. */
 function addDriver(b, { y, z, scale = 1, arms = true, wheel = null }) {
   const hr = 0.017 * scale;
-  b.add('driver', new THREE.SphereGeometry(hr, 14, 10), { pos: [0, y + hr * 1.15, z] });
+  b.add('driver', new THREE.SphereGeometry(hr, 12, 8), { pos: [0, y + hr * 1.15, z] });
   // Visor band.
-  b.add('glass', new THREE.SphereGeometry(hr * 1.015, 14, 8, Math.PI * 0.62, Math.PI * 0.76, Math.PI * 0.34, Math.PI * 0.26),
+  b.add('glass', new THREE.SphereGeometry(hr * 1.015, 12, 6, Math.PI * 0.62, Math.PI * 0.76, Math.PI * 0.34, Math.PI * 0.26),
     { pos: [0, y + hr * 1.15, z], rot: [0, -Math.PI * 0.5, 0] });
   // Shoulders / torso.
   b.add('paintB', roundBox(0.036 * scale, 0.020 * scale, 0.024 * scale, 0.55, 12, 3),
@@ -465,7 +465,7 @@ function addDriver(b, { y, z, scale = 1, arms = true, wheel = null }) {
     }
   }
   if (wheel) {
-    b.add('dark', new THREE.TorusGeometry(wheel.r, wheel.r * 0.22, 6, 16),
+    b.add('dark', new THREE.TorusGeometry(wheel.r, wheel.r * 0.22, 5, 12),
       { pos: [0, wheel.y, wheel.z], rot: [wheel.tilt ?? -0.5, 0, 0] });
   }
 }
@@ -579,7 +579,7 @@ const TREAD = {
 export function buildWheelParts(radius, width, style = 'street', quality = 1) {
   const halfW = width * 0.5;
   const rimR = radius * (style === 'monster' ? 0.52 : style === 'wire' ? 0.66 : 0.60);
-  const segs = Math.round(lerp(20, 34, clamp01(quality)));
+  const segs = Math.round(lerp(18, 28, clamp01(quality)));
   const { prof, tread } = tyreProfile(radius, halfW, rimR, style);
   const T = TREAD[style] ?? TREAD.street;
   const depth = radius * T.depth;
@@ -606,7 +606,7 @@ export function buildWheelParts(radius, width, style = 'street', quality = 1) {
   const faceOff = halfW * 0.60;
   if (style === 'wire') {
     // Wire wheel: many thin spokes to a small hub.
-    const spokes = 20;
+    const spokes = 16;
     for (let i = 0; i < spokes; i++) {
       const th = (i / spokes) * TAU;
       const g = new THREE.CylinderGeometry(0.0009, 0.0009, rimR * 0.94, 4, 1);
@@ -616,7 +616,7 @@ export function buildWheelParts(radius, width, style = 'street', quality = 1) {
       g.translate(faceOff * (i % 2 ? 1 : 0.55), 0, 0);
       parts.push(normalizeGeo(g));
     }
-    const ring = new THREE.TorusGeometry(rimR * 0.97, rimR * 0.05, 6, segs);
+    const ring = new THREE.TorusGeometry(rimR * 0.97, rimR * 0.05, 5, segs);
     ring.rotateY(Math.PI * 0.5);
     ring.translate(faceOff, 0, 0);
     parts.push(normalizeGeo(ring));
@@ -625,7 +625,7 @@ export function buildWheelParts(radius, width, style = 'street', quality = 1) {
     const sw = rimR * (style === 'monster' ? 0.30 : 0.24);
     for (let i = 0; i < spokes; i++) {
       const th = (i / spokes) * TAU;
-      const g = roundBox(sw, rimR * 0.90, halfW * 0.34, 0.4, 10, 5);
+      const g = roundBox(sw, rimR * 0.90, halfW * 0.34, 0.4, 8, 5);
       g.translate(0, rimR * 0.45, 0);
       _m4.makeRotationZ(th);
       g.applyMatrix4(_m4);
@@ -638,7 +638,7 @@ export function buildWheelParts(radius, width, style = 'street', quality = 1) {
     parts.push(normalizeGeo(dish));
   }
   // Hub + nut.
-  const hub = new THREE.CylinderGeometry(rimR * 0.30, rimR * 0.26, halfW * 1.0, 12, 1);
+  const hub = new THREE.CylinderGeometry(rimR * 0.30, rimR * 0.26, halfW * 1.0, 10, 1);
   hub.rotateZ(Math.PI * 0.5);
   hub.translate(faceOff * 0.25, 0, 0);
   parts.push(normalizeGeo(hub));
@@ -678,20 +678,30 @@ export class AntennaChain {
    * @param {number} segCount
    * @param {number} segLen
    * @param {{lean?:number, stiffness?:number, damping?:number,
-   *          accelGain?:number, gravityGain?:number}} [opts]
+   *          accelGain?:number, gravityGain?:number, maxBend?:number}} [opts]
    */
   constructor(segCount, segLen, opts = {}) {
     this.n = segCount;
     this.segLen = segLen;
-    this.lean = opts.lean ?? 0.16;          // rad, backward rake at rest
-    this.stiffness = opts.stiffness ?? 780; // 1/s² angular spring
-    this.damping = opts.damping ?? 3.1;     // 1/s velocity damping
-    this.accelGain = opts.accelGain ?? 1.25;
-    this.gravityGain = opts.gravityGain ?? 0.14;
-    this.maxTilt = opts.maxTilt ?? 1.15;    // rad from the rest direction
+    this.lean = opts.lean ?? 0.16;            // rad, backward rake at rest
+    /**
+     * Angular spring rate (1/s²). The wobble frequency is √k / 2π, and the
+     * steady deflection of one joint is sin θ = a·gain / (k·segLen), so these
+     * three numbers are the whole feel of the antenna:
+     *   k 2000, segLen 0.0175 ⇒ 7.1 Hz, and 20 m/s² of lateral acceleration
+     *   bends each joint ~18°, so the tip leans ~55° and overshoots further on
+     *   release. Exactly the Re-Volt look.
+     */
+    this.stiffness = opts.stiffness ?? 2000;
+    this.damping = opts.damping ?? 7.5;       // 1/s (ζ ≈ 0.084 — 3-4 visible bounces)
+    this.accelGain = opts.accelGain ?? 0.55;
+    this.gravityGain = opts.gravityGain ?? 0.16;
+    /** Hard limit on the bend at any single joint — it can never fold over. */
+    this.maxBend = opts.maxBend ?? 0.62;
 
     const N = segCount + 1;
     this.pos = new Float32Array(N * 3);
+    this.prev = new Float32Array(N * 3);
     this.vel = new Float32Array(N * 3);
     this.rest = new Float32Array(N * 3);
     this._prevOmega = new THREE.Vector3();
@@ -707,9 +717,9 @@ export class AntennaChain {
       this.rest[o] = 0;
       this.rest[o + 1] = i * sl * c;
       this.rest[o + 2] = i * sl * s;
-      this.pos[o] = this.rest[o];
-      this.pos[o + 1] = this.rest[o + 1];
-      this.pos[o + 2] = this.rest[o + 2];
+      this.pos[o] = this.prev[o] = this.rest[o];
+      this.pos[o + 1] = this.prev[o + 1] = this.rest[o + 1];
+      this.pos[o + 2] = this.prev[o + 2] = this.rest[o + 2];
       this.vel[o] = this.vel[o + 1] = this.vel[o + 2] = 0;
     }
     this._prevOmega.set(0, 0, 0);
@@ -721,21 +731,20 @@ export class AntennaChain {
    * @param {THREE.Vector3} accelWorld chassis linear acceleration (m/s²)
    * @param {THREE.Vector3} omegaWorld chassis angular velocity (rad/s)
    * @param {THREE.Quaternion} quat chassis orientation
-   * @param {THREE.Vector3} basePos antenna base in chassis space
+   * @param {THREE.Vector3} [basePos] antenna base in chassis space (unused —
+   *        the solve is already relative to the base)
    */
   update(dt, accelWorld, omegaWorld, quat, basePos) {
     if (!(dt > 0)) return;
     // Pseudo-force = gravity − linear acceleration, in the chassis frame.
     _aQi.copy(quat).invert();
-    _aTmp.copy(_WORLD_G).sub(accelWorld).applyQuaternion(_aQi);
-    const gx = _aTmp.x * this.gravityGain;
-    const gy = _aTmp.y * this.gravityGain;
-    const gz = _aTmp.z * this.gravityGain;
-    // The accel term gets its own (larger) gain so the whip reads.
+    _aTmp.copy(_WORLD_G).applyQuaternion(_aQi).multiplyScalar(this.gravityGain);
+    const gx = _aTmp.x, gy = _aTmp.y, gz = _aTmp.z;
+    // The acceleration term gets its own gain so the whip reads at RC scale.
     _aTmp2.copy(accelWorld).applyQuaternion(_aQi).multiplyScalar(-this.accelGain);
     const ax = _aTmp2.x, ay = _aTmp2.y, az = _aTmp2.z;
 
-    // Rotating-frame terms.
+    // Rotating-frame terms — this is what makes a spin lash the antenna out.
     _aTmp.copy(omegaWorld).applyQuaternion(_aQi);
     const wx = _aTmp.x, wy = _aTmp.y, wz = _aTmp.z;
     const alx = (wx - this._prevOmega.x) / dt;
@@ -744,8 +753,8 @@ export class AntennaChain {
     this._prevOmega.set(wx, wy, wz);
 
     // Fixed substeps keep the stiff spring stable at any frame rate.
-    const h = 1 / 180;
-    this._acc = Math.min(this._acc + Math.min(dt, 0.05), h * 12);
+    const h = 1 / 240;
+    this._acc = Math.min(this._acc + Math.min(dt, 0.05), h * 16);
     while (this._acc >= h) {
       this._acc -= h;
       this._step(h, gx + ax, gy + ay, gz + az, wx, wy, wz, alx, aly, alz);
@@ -753,38 +762,49 @@ export class AntennaChain {
     void basePos;
   }
 
+  /**
+   * One substep of position-based dynamics.
+   *
+   * Integrate → project the length + bend constraints → *rebuild the velocity
+   * from the position change*. That last step is the important one: with plain
+   * verlet plus a positional projection, the velocity the projection removed
+   * stays in the buffer and keeps being re-applied, and a lightly damped chain
+   * then wanders around a bent shape forever instead of returning to rest.
+   */
   _step(h, ax, ay, az, wx, wy, wz, alx, aly, alz) {
     const p = this.pos;
+    const prev = this.prev;
     const v = this.vel;
     const rest = this.rest;
     const n = this.n;
     const k = this.stiffness;
     const dmp = Math.exp(-this.damping * h);
+    const L = this.segLen;
 
     for (let i = 1; i <= n; i++) {
       const o = i * 3;
       const px = p[o], py = p[o + 1], pz = p[o + 2];
+      prev[o] = px; prev[o + 1] = py; prev[o + 2] = pz;
 
       // Angular spring: pull toward the straight continuation of the segment
-      // below, blended with the absolute rest pose so it never folds over.
+      // below, blended with the absolute rest pose so the whole whip comes home.
       const q = (i - 1) * 3;
       let dx, dy, dz;
+      const rdx = rest[o] - rest[q], rdy = rest[o + 1] - rest[q + 1], rdz = rest[o + 2] - rest[q + 2];
       if (i === 1) {
-        dx = rest[3] - rest[0]; dy = rest[4] - rest[1]; dz = rest[5] - rest[2];
+        dx = rdx; dy = rdy; dz = rdz;
       } else {
         const r = (i - 2) * 3;
         dx = p[q] - p[r]; dy = p[q + 1] - p[r + 1]; dz = p[q + 2] - p[r + 2];
         const l = Math.hypot(dx, dy, dz) || 1;
-        dx = (dx / l) * this.segLen; dy = (dy / l) * this.segLen; dz = (dz / l) * this.segLen;
-        // Blend with the absolute rest direction so the whole whip returns home.
-        const rdx = rest[o] - rest[q], rdy = rest[o + 1] - rest[q + 1], rdz = rest[o + 2] - rest[q + 2];
-        dx = dx * 0.68 + rdx * 0.32;
-        dy = dy * 0.68 + rdy * 0.32;
-        dz = dz * 0.68 + rdz * 0.32;
+        const f = L / l;
+        dx = dx * f * 0.70 + rdx * 0.30;
+        dy = dy * f * 0.70 + rdy * 0.30;
+        dz = dz * f * 0.70 + rdz * 0.30;
       }
       const tx = p[q] + dx, ty = p[q + 1] + dy, tz = p[q + 2] + dz;
 
-      // Centrifugal: −ω × (ω × r).  Euler: −α × r.  Coriolis: −2 ω × v.
+      // Centrifugal −ω×(ω×r), Euler −α×r, Coriolis −2ω×v.
       const cx = wy * pz - wz * py;
       const cy = wz * px - wx * pz;
       const cz = wx * py - wy * px;
@@ -798,27 +818,68 @@ export class AntennaChain {
       const coy = -2 * (wz * v[o] - wx * v[o + 2]);
       const coz = -2 * (wx * v[o + 1] - wy * v[o]);
 
-      v[o] = (v[o] + ((tx - px) * k + ax + cfx + eux + cox) * h) * dmp;
-      v[o + 1] = (v[o + 1] + ((ty - py) * k + ay + cfy + euy + coy) * h) * dmp;
-      v[o + 2] = (v[o + 2] + ((tz - pz) * k + az + cfz + euz + coz) * h) * dmp;
-
-      p[o] = px + v[o] * h;
-      p[o + 1] = py + v[o + 1] * h;
-      p[o + 2] = pz + v[o + 2] * h;
+      const nvx = (v[o] + ((tx - px) * k + ax + cfx + eux + cox) * h) * dmp;
+      const nvy = (v[o + 1] + ((ty - py) * k + ay + cfy + euy + coy) * h) * dmp;
+      const nvz = (v[o + 2] + ((tz - pz) * k + az + cfz + euz + coz) * h) * dmp;
+      v[o] = nvx; v[o + 1] = nvy; v[o + 2] = nvz;
+      p[o] = px + nvx * h;
+      p[o + 1] = py + nvy * h;
+      p[o + 2] = pz + nvz * h;
     }
 
-    // Inextensibility: two Gauss-Seidel passes from the base outward.
+    // Length + bend projection, base outward, twice.
     for (let pass = 0; pass < 2; pass++) {
       for (let i = 1; i <= n; i++) {
         const o = i * 3, q = (i - 1) * 3;
         let dx = p[o] - p[q], dy = p[o + 1] - p[q + 1], dz = p[o + 2] - p[q + 2];
-        const l = Math.hypot(dx, dy, dz);
-        if (l < 1e-9) { p[o + 1] = p[q + 1] + this.segLen; continue; }
-        const f = this.segLen / l;
-        p[o] = p[q] + dx * f;
-        p[o + 1] = p[q + 1] + dy * f;
-        p[o + 2] = p[q + 2] + dz * f;
+        let l = Math.hypot(dx, dy, dz);
+        if (l < 1e-9) {
+          dx = 0; dy = L; dz = 0; l = L;
+        }
+        dx /= l; dy /= l; dz /= l;
+
+        // Bend limit: never let one joint fold past `maxBend` from the segment
+        // below it (or from the rest direction, for the root joint).
+        let bx, by, bz;
+        if (i === 1) {
+          bx = rest[3] - rest[0]; by = rest[4] - rest[1]; bz = rest[5] - rest[2];
+        } else {
+          const r = (i - 2) * 3;
+          bx = p[q] - p[r]; by = p[q + 1] - p[r + 1]; bz = p[q + 2] - p[r + 2];
+        }
+        const bl = Math.hypot(bx, by, bz) || 1;
+        bx /= bl; by /= bl; bz /= bl;
+        const cosA = clamp(dx * bx + dy * by + dz * bz, -1, 1);
+        const maxCos = Math.cos(this.maxBend);
+        if (cosA < maxCos) {
+          // Slerp the direction back toward the reference until it is legal.
+          const ang = Math.acos(cosA);
+          const t = 1 - this.maxBend / Math.max(1e-6, ang);
+          const s0 = Math.sin(ang);
+          if (s0 > 1e-6) {
+            const w0 = Math.sin((1 - t) * ang) / s0;
+            const w1 = Math.sin(t * ang) / s0;
+            dx = dx * w0 + bx * w1;
+            dy = dy * w0 + by * w1;
+            dz = dz * w0 + bz * w1;
+            const nl = Math.hypot(dx, dy, dz) || 1;
+            dx /= nl; dy /= nl; dz /= nl;
+          }
+        }
+        p[o] = p[q] + dx * L;
+        p[o + 1] = p[q + 1] + dy * L;
+        p[o + 2] = p[q + 2] + dz * L;
       }
+    }
+
+    // Rebuild the velocity from the *actual* motion, so anything the projection
+    // removed does not linger and re-inject itself next step.
+    const inv = 1 / h;
+    for (let i = 1; i <= n; i++) {
+      const o = i * 3;
+      v[o] = (p[o] - prev[o]) * inv;
+      v[o + 1] = (p[o + 1] - prev[o + 1]) * inv;
+      v[o + 2] = (p[o + 2] - prev[o + 2]) * inv;
     }
   }
 
@@ -1395,6 +1456,13 @@ function buildCarParts(def, game) {
     meta = buildFallback(b, def);
   }
   const groups = b.build();
+  for (const key in groups) {
+    if (!geometryIsFinite(groups[key])) {
+      console.error(`[CarBodies] "${def.id}" bucket "${key}" produced non-finite vertices; dropping it.`);
+      groups[key].dispose();
+      delete groups[key];
+    }
+  }
   if (!groups.paintA && !groups.shellGlass) {
     // Absolute last resort — never ship an invisible car.
     const fb = new PartBuilder();
@@ -1413,13 +1481,22 @@ function buildCarParts(def, game) {
     ...ant,
     segLen,
     segGeo: new THREE.CylinderGeometry(0.0011, 0.0007, segLen, 6, 1),
-    ballGeo: new THREE.SphereGeometry(ant.ballR, 12, 9),
-    mountGeo: new THREE.CylinderGeometry(0.0030, 0.0038, 0.008, 8, 1),
+    ballGeo: new THREE.SphereGeometry(ant.ballR, 12, 8),
+    mountGeo: new THREE.CylinderGeometry(0.0030, 0.0038, 0.008, 7, 1),
   };
   // The segment geometry is authored centred; shift it so y = 0 is its base.
   antenna.segGeo.translate(0, segLen * 0.5, 0);
 
   return { groups, wheel, antenna, wheelStyle, meta };
+}
+
+/** Cheap sanity check — a single NaN vertex makes an entire mesh disappear. */
+function geometryIsFinite(geo) {
+  const a = geo?.attributes?.position;
+  if (!a) return false;
+  const arr = a.array;
+  for (let i = 0; i < arr.length; i++) if (!Number.isFinite(arr[i])) return false;
+  return true;
 }
 
 /** A crude but complete car, used only if a shape builder throws. */
@@ -1451,6 +1528,21 @@ function fallbackStandard(color, roughness = 0.5, metalness = 0.1) {
 }
 
 /**
+ * Run a MaterialLibrary call, falling back to a plain standard material if it
+ * throws or returns nothing. A procedural texture bake failing must never cost
+ * us a visible car.
+ */
+function safeMat(fn, fallback) {
+  try {
+    const m = fn();
+    if (m && m.isMaterial) return m;
+  } catch (err) {
+    console.warn('[CarBodies] material build failed, using a fallback:', err);
+  }
+  return fallback();
+}
+
+/**
  * Resolve the material bucket → THREE.Material map for one car instance.
  * Shared library materials are reused; the animated light materials and the
  * number plate are freshly created per car so they can be driven independently.
@@ -1463,39 +1555,50 @@ export function carMaterials(game, car) {
   const accent = def.colorAccent ?? 0xffffff;
   const glassy = def.chassis === 'glass';
 
-  const paintA = M
-    ? M.carPaint({ color: primary, metallic: def.chassis === 'metal' ? 0.88 : 0.55, flake: 0.55, clearcoat: 1.0 })
-    : fallbackStandard(primary, 0.32, 0.6);
-  const paintB = M
-    ? M.carPaint({ color: secondary, metallic: def.chassis === 'metal' ? 0.55 : 0.25, flake: 0.28, clearcoat: 0.85, roughness: 0.34 })
-    : fallbackStandard(secondary, 0.42, 0.2);
-  const accentMat = M
-    ? M.carPaint({ color: accent, metallic: 0.45, flake: 0.2, clearcoat: 0.7 })
-    : fallbackStandard(accent, 0.4, 0.2);
+  const paintA = safeMat(
+    () => M?.carPaint({ color: primary, metallic: def.chassis === 'metal' ? 0.88 : 0.55, flake: 0.55, clearcoat: 1.0 }),
+    () => fallbackStandard(primary, 0.32, 0.6));
+  const paintB = safeMat(
+    () => M?.carPaint({ color: secondary, metallic: def.chassis === 'metal' ? 0.55 : 0.25, flake: 0.28, clearcoat: 0.85, roughness: 0.34 }),
+    () => fallbackStandard(secondary, 0.42, 0.2));
+  const accentMat = safeMat(
+    () => M?.carPaint({ color: accent, metallic: 0.45, flake: 0.2, clearcoat: 0.7 }),
+    () => fallbackStandard(accent, 0.4, 0.2));
 
-  const chrome = M ? M.get('metal/chrome', { sizeMeters: 0.09 }) : fallbackStandard(0xdfe4ea, 0.10, 1.0);
-  const dark = M ? M.get('plastic/abs_matte', { sizeMeters: 0.10, color: 0x2a2d33 }) : fallbackStandard(0x2a2d33, 0.72, 0.05);
-  const battery = M ? M.get('plastic/abs_matte', { sizeMeters: 0.08, color: 0x2c3a4a }) : fallbackStandard(0x2c3a4a, 0.6, 0.1);
-  const driver = M ? M.get('plastic/injection_gloss', { sizeMeters: 0.06, color: 0xf2e4d0 }) : fallbackStandard(0xf2e4d0, 0.42, 0.0);
-  const rubber = M ? M.get('rubber/tyre_tread', { sizeMeters: 0.085 }) : fallbackStandard(0x14161a, 0.86, 0.02);
-  const rim = M ? M.get('metal/brushed_alu', { sizeMeters: 0.06 }) : fallbackStandard(0xb9bfc7, 0.28, 0.9);
+  const chrome = safeMat(() => M?.get('metal/chrome', { sizeMeters: 0.09 }),
+    () => fallbackStandard(0xdfe4ea, 0.10, 1.0));
+  const dark = safeMat(() => M?.get('plastic/abs_matte', { sizeMeters: 0.10, color: 0x2a2d33 }),
+    () => fallbackStandard(0x2a2d33, 0.72, 0.05));
+  const battery = safeMat(() => M?.get('plastic/abs_matte', { sizeMeters: 0.08, color: 0x2c3a4a }),
+    () => fallbackStandard(0x2c3a4a, 0.6, 0.1));
+  const driver = safeMat(() => M?.get('plastic/injection_gloss', { sizeMeters: 0.06, color: 0xf2e4d0 }),
+    () => fallbackStandard(0xf2e4d0, 0.42, 0.0));
+  const rubber = safeMat(() => M?.get('rubber/tyre_tread', { sizeMeters: 0.085 }),
+    () => fallbackStandard(0x14161a, 0.86, 0.02));
+  const rim = safeMat(() => M?.get('metal/brushed_alu', { sizeMeters: 0.06 }),
+    () => fallbackStandard(0xb9bfc7, 0.28, 0.9));
 
-  let glass;
-  if (M) {
-    glass = M.get('glass/clear', { sizeMeters: 0.12, transparent: true, opacity: 0.42, roughness: 0.06, doubleSide: true, depthWrite: false });
-  } else {
-    glass = new THREE.MeshStandardMaterial({ color: 0x9fd4e8, transparent: true, opacity: 0.4, roughness: 0.08, metalness: 0.1, side: THREE.DoubleSide, depthWrite: false });
-  }
+  const glass = safeMat(
+    () => M?.get('glass/clear', {
+      sizeMeters: 0.12, transparent: true, opacity: 0.42, roughness: 0.06,
+      doubleSide: true, depthWrite: false,
+    }),
+    () => new THREE.MeshStandardMaterial({
+      color: 0x9fd4e8, transparent: true, opacity: 0.4, roughness: 0.08,
+      metalness: 0.1, side: THREE.DoubleSide, depthWrite: false,
+    }));
 
-  let shellGlass = glass;
-  if (glassy) {
-    shellGlass = M
-      ? M.get('plastic/translucent', {
+  const shellGlass = glassy
+    ? safeMat(
+      () => M?.get('plastic/translucent', {
         sizeMeters: 0.16, color: primary, transparent: true, opacity: 0.44,
         roughness: 0.12, doubleSide: true, depthWrite: false,
-      })
-      : new THREE.MeshStandardMaterial({ color: primary, transparent: true, opacity: 0.45, roughness: 0.14, side: THREE.DoubleSide, depthWrite: false });
-  }
+      }),
+      () => new THREE.MeshStandardMaterial({
+        color: primary, transparent: true, opacity: 0.45, roughness: 0.14,
+        side: THREE.DoubleSide, depthWrite: false,
+      }))
+    : glass;
 
   // ── per-instance animated lights ──
   const brake = new THREE.MeshStandardMaterial({
@@ -1514,17 +1617,15 @@ export function carMaterials(game, car) {
   });
   head.name = `car:${car.id}:head`;
 
-  let plate;
   const num = String((car.raceNumber ?? car.id + 1) % 100);
-  if (M) {
-    plate = M.decal({
+  const plate = safeMat(
+    () => M?.decal({
       key: `carnum:${num}`, text: num, width: 256, height: 256,
       textColor: '#ffffff', outline: '#101318', background: null,
       wear: 0.18, font: 'condensed', unlit: false, roughness: 0.45,
       doubleSide: false, opacity: 0.95,
-    });
-  }
-  if (!plate) plate = fallbackStandard(0xffffff, 0.5, 0.0);
+    }),
+    () => fallbackStandard(0xffffff, 0.5, 0.0));
 
   return {
     paintA, paintB, accent: accentMat, chrome, dark, battery, driver,
@@ -1634,9 +1735,9 @@ export function buildCarModel(game, car) {
 
   const chain = new AntennaChain(ant.segs, ant.segLen, {
     lean: 0.18,
-    stiffness: 720,
-    damping: 2.9,
-    accelGain: 1.35,
+    stiffness: 2000,
+    damping: 7.5,
+    accelGain: 0.55,
     gravityGain: 0.16,
   });
   writeAntenna(chain, segs, ball, ant.segLen);

@@ -1,0 +1,18 @@
+- generic [active] [ref=f74e1]:
+  - generic [ref=f74e3]:
+    - heading "RC RUMBLE" [level=1] [ref=f74e4]
+    - generic [ref=f74e5]: RADIO CONTROLLED MAYHEM
+    - generic [ref=f74e7]: booting
+  - generic [ref=f74e10]:
+    - generic [ref=f74e11]: "[plugin:vite:import-analysis] Failed to resolve import \"./tracks/garden.js\" from \"src/track/TrackSystem.js\". Does the file exist?"
+    - generic [ref=f74e12]: /Users/dumorro/dev/jogos/re-volt_clone/src/track/TrackSystem.js:35:21
+    - generic [ref=f74e13]: "33 | import { CenterlineSpline, SplineSample, ClosestResult } from './Spline.js'; 34 | import toyMuseum from './tracks/toy_museum.js'; 35 | import garden from './tracks/garden.js'; | ^ 36 | 37 | /** Every track module known to the game, in menu order. */"
+    - generic [ref=f74e14]: at TransformPluginContext._formatLog (file:///Users/dumorro/dev/jogos/re-volt_clone/node_modules/vite/dist/node/chunks/dep-Dm0c1Wj2.js:42658:41) at TransformPluginContext.error (file:///Users/dumorro/dev/jogos/re-volt_clone/node_modules/vite/dist/node/chunks/dep-Dm0c1Wj2.js:42655:16) at normalizeUrl (file:///Users/dumorro/dev/jogos/re-volt_clone/node_modules/vite/dist/node/chunks/dep-Dm0c1Wj2.js:40634:23) at async file:///Users/dumorro/dev/jogos/re-volt_clone/node_modules/vite/dist/node/chunks/dep-Dm0c1Wj2.js:40753:37 at async Promise.all (index 7) at async TransformPluginContext.transform (file:///Users/dumorro/dev/jogos/re-volt_clone/node_modules/vite/dist/node/chunks/dep-Dm0c1Wj2.js:40680:7) at async EnvironmentPluginContainer.transform (file:///Users/dumorro/dev/jogos/re-volt_clone/node_modules/vite/dist/node/chunks/dep-Dm0c1Wj2.js:42453:18) at async loadAndTransform (file:///Users/dumorro/dev/jogos/re-volt_clone/node_modules/vite/dist/node/chunks/dep-Dm0c1Wj2.js:35845:27) at async viteTransformMiddleware (file:///Users/dumorro/dev/jogos/re-volt_clone/node_modules/vite/dist/node/chunks/dep-Dm0c1Wj2.js:37369:24
+    - generic [ref=f74e15]:
+      - text: Click outside, press Esc key, or fix the code to dismiss.You can also disable this overlay by setting
+      - code [ref=f74e16]: server.hmr.overlay
+      - text: to
+      - code [ref=f74e17]: "false"
+      - text: in
+      - code [ref=f74e18]: vite.config.js
+      - text: .

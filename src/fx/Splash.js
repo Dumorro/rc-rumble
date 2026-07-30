@@ -69,15 +69,20 @@ export class Splash {
     this.enabled = true;
     this.rate = 1;
 
-    /** Metres of travel between wake ripples. */
-    this.rippleSpacing = 0.075;
+    /**
+     * Metres of travel between wake ripples, and which wheels lay them. Four
+     * wheels × 7 cm at racing speed is ~300 rings/second per car, which buries
+     * the GROUND layer and reads as a strobe rather than a wake. The rear wheels
+     * at 15 cm look better *and* cost a quarter as much.
+     */
+    this.rippleSpacing = 0.15;
 
     /** @type {WheelWater[]} carId*4 + wheel */
     this.wheels = [];
-    for (let i = 0; i < CONFIG.race.maxCars * 4; i++) this.wheels.push(new WheelWater());
+    for (let i = 0; i < Math.max(8, CONFIG.race.maxCars) * 4; i++) this.wheels.push(new WheelWater());
 
     /** Per-car body-splash debounce. */
-    this._bodyCooldown = new Float32Array(CONFIG.race.maxCars);
+    this._bodyCooldown = new Float32Array(Math.max(8, CONFIG.race.maxCars));
 
     this.styles = {};
     this.stats = { spawned: 0, ripples: 0, wetWheels: 0 };
@@ -268,7 +273,8 @@ export class Splash {
 
         if (cp) {
           this._roosterTail(car, wheel, st, cp, dt, speed, vx, vy, vz);
-          this._wake(st, cp, dt, speed);
+          // only the rear wheels leave a wake — the fronts run through it
+          if (wheel.isFront === false || w >= 2) this._wake(st, cp, dt, speed);
         }
       } else {
         if (st.submerged) {
@@ -408,12 +414,12 @@ export class Splash {
       o.sizeMul = lerp(0.9, 1.7, work);
       P.burstCone(S.mist, px, py + 0.01, pz, dx, dy * 0.8, dz, eject * 0.35, 0.8, m, o);
 
+      // Foam sits on the GROUND layer alongside the wake rings, so it is
+      // deliberately rationed to one per wheel per frame.
       const fo = resetOpts(_opts2);
       fo.sizeMul = lerp(0.8, 1.6, work);
-      for (let k = 0; k < m; k++) {
-        P.spawn(S.foam, cp.x + frandRange(-0.02, 0.02), cp.y + 0.003,
-          cp.z + frandRange(-0.02, 0.02), _rn.x, _rn.y, _rn.z, fo);
-      }
+      P.spawn(S.foam, cp.x + frandRange(-0.02, 0.02), cp.y + 0.003,
+        cp.z + frandRange(-0.02, 0.02), _rn.x, _rn.y, _rn.z, fo);
     }
   }
 

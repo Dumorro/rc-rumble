@@ -26,14 +26,16 @@ const _p = new THREE.Vector3();
 const MAX_BEARINGS = 12;
 
 export const BallBearing = {
-  id: 'bearing',
+  // id is 'ball' (not 'bearing') on purpose: both the FX weapon table and the
+  // audio weapon-alias table already key impact/clatter behaviour off 'ball'.
+  id: 'ball',
   name: 'Ball Bearing',
-  icon: 'bearing',
+  icon: 'ball',
   slots: 1,
   uses: 2,
   aimMode: 'forward',
   dual: true,
-  entityKind: 'bearing',
+  entityKind: 'ball',
   lifetime: 16.0,
   blurb: 'Heavy sphere. Fire it or drop it.',
 
@@ -61,14 +63,14 @@ export const BallBearing = {
   fire(ctx) {
     const mgr = ctx.projectiles ?? projectilesOf(ctx.game);
     if (!mgr) return false;
-    if (mgr.countOfKind('bearing') >= MAX_BEARINGS) {
-      const old = mgr.oldestOfKind('bearing');
+    if (mgr.countOfKind('ball') >= MAX_BEARINGS) {
+      const old = mgr.oldestOfKind('ball');
       if (old) mgr.despawn(old);
     }
     const e = mgr.spawn(BallBearing, ctx);
     if (!e) return false;
     emitSpawn(ctx.game, {
-      weaponId: 'bearing', carId: ctx.car?.id ?? -1, position: e.pos, kind: 'bearing',
+      weaponId: 'ball', carId: ctx.car?.id ?? -1, position: e.pos, kind: 'ball',
     });
     shake(ctx.game, ctx.car?.isPlayer ? 0.12 : 0.04, 0.12);
     return true;
@@ -176,7 +178,7 @@ export const BallBearing = {
       spin: BallBearing.bonusSpin * scale * (car.id % 2 ? 1 : -1),
       roll: 1.6 * scale,
       sourceId: e.ownerId,
-      weaponId: 'bearing',
+      weaponId: 'ball',
       worldPoint: payload?.worldPoint ?? e.pos,
       shake: 0.6 * scale + 0.2,
     });
@@ -187,7 +189,7 @@ export const BallBearing = {
     if (e.mesh) e.mesh.visible = false;
     if (e.body) { e.body.velocity.set(0, 0, 0); e.body.angularVelocity.set(0, 0, 0); }
     emitExpire(mgr.game, {
-      weaponId: 'bearing', carId: e.ownerId, position: e.pos, kind: 'bearing',
+      weaponId: 'ball', carId: e.ownerId, position: e.pos, kind: 'ball',
     });
   },
 };

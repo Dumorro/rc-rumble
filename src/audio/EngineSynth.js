@@ -53,6 +53,9 @@ const DRIVE_TUNE = {
   fwd:   { harm: 0.92, rattle: 1.06 },
 };
 
+/** Overall engine level trim. See the note where it is used. */
+const BASE_LEVEL = 0.38;
+
 /** Detail tiers by distance to the listener (metres). */
 export const TIER_NEAR = 9.0;
 export const TIER_MID = 24.0;
@@ -116,13 +119,18 @@ export class EngineSynth {
     this._crackleTimer = 0;
     this._rattlePhase = rng.next() * 6.28;
     this._shiftCooldown = 0;
+    this._shiftHoldUntil = 0;
     this._airFlare = 0;
+    this._rattleHoldUntil = 0;
     this._started = false;
     this.alive = false;
     this.muted = false;
 
     /** @type {Array<{g:GainNode, on:boolean, off:number, tier:number}>} */
     this._layers = [];
+    /** Last value written per param slot; NaN = never written. See `_w`. */
+    this._pw = new Float32Array(28).fill(NaN);
+    this._nowT = 0;
 
     this._build();
   }
@@ -289,6 +297,31 @@ export class EngineSynth {
   // ───────────────────────────────────────────────────────────── update
 
   /**
+   * Change-gated AudioParam write.
+   *
+   * A tier-2 car rewrites ~28 AudioParams per frame; eight of them in a pile-up
+   * is ~450 JS→audio-thread calls every frame, and most of those params moved by
+   * an inaudible amount. Each write site owns a slot in `_pw`, and we only
+   * schedule automation when the value actually moved past `eps`.
+   *
+   * @param {number} i    slot index (must be unique per call site)
+   * @param {AudioParam} param
+   * @param {number} v
+   * @param {number} tau  smoothing time constant
+   * @param {number} eps  absolute change required to bother writing
+   */
+  _w(i, param, v, tau, eps) {
+    if (!param) return;
+    const val = fin(v);
+    const last = this._pw[i];
+    // `last !== last` is the NaN sentinel: first write always goes through.
+    if (last === last && Math.abs(val - last) <= eps) return;
+    this._pw[i] = val;
+    targetTo(param, val, this._nowT, tau);
+  }
+
+
+  /**
    * @param {number} dt seconds (real or sim — both fine, it is all smoothing)
    * @param {object} [car] override the car object (defaults to the one bound at construction)
    */
@@ -297,6 +330,7 @@ export class EngineSynth {
     const c = car || this.car;
     if (!c) return;
     const now = this.ctx.currentTime;
+    this._nowT = now;
     const d = clamp(fin(dt, 0.016), 0.0001, 0.1);
 
     // ── position / velocity ───────────────────────────────────────────────
@@ -305,9 +339,9 @@ export class EngineSynth {
     const px = p ? fin(p.x) : 0, py = p ? fin(p.y) : 0, pz = p ? fin(p.z) : 0;
     if (this.panner) {
       if (this.panner.positionX) {
-        targetTo(this.panner.positionX, px, now, 0.012);
-        targetTo(this.panner.positionY, py, now, 0.012);
-        targetTo(this.panner.positionZ, pz, now, 0.012);
+        this._w(0, this.panner.positionX, px, 0.012, 0.002);
+        this._w(1, this.panner.positionY, py, 0.012, 0.002);
+        this._w(2, this.panner.positionZ, pz, 0.012, 0.002);
       } else if (this.panner.setPosition) {
         try { this.panner.setPosition(px, py, pz); } catch { /* ignore */ }
       }
@@ -370,20 +404,23 @@ export class EngineSynth {
     // Fast glide: the motor must feel connected to the throttle, so the pitch
     // tracks with ~12 ms of smoothing only.
     const tau = 0.012;
+    // While a shift is in flight the shift envelope owns the frequency params —
+    // writing over them every frame would erase the dip we just scheduled.
+    const shifting = now < this._shiftHoldUntil;
     if (this.oscBody) {
-      targetTo(this.oscBody.frequency, f0, now, tau);
-      targetTo(this.oscBody.detune, det, now, 0.03);
+      if (!shifting) this._w(3, this.oscBody.frequency, f0, tau, f0 * 0.0015);
+      this._w(4, this.oscBody.detune, det, 0.03, 0.4);
     }
     if (this.tier >= 1 && this.oscHarm) {
-      targetTo(this.oscHarm.frequency, f0 * this.harmRatio, now, tau);
-      targetTo(this.oscHarm.detune, det + 7, now, 0.03);
+      if (!shifting) this._w(5, this.oscHarm.frequency, f0 * this.harmRatio, tau, f0 * 0.003);
+      this._w(6, this.oscHarm.detune, det + 7, 0.03, 0.4);
     }
     if (this.tier >= 2) {
       if (this.oscWhine) {
-        targetTo(this.oscWhine.frequency, f0 * this.whineRatio, now, tau);
-        targetTo(this.oscWhine.detune, det - 11, now, 0.03);
+        if (!shifting) this._w(7, this.oscWhine.frequency, f0 * this.whineRatio, tau, f0 * 0.006);
+        this._w(8, this.oscWhine.detune, det - 11, 0.03, 0.4);
       }
-      if (this.oscSub) targetTo(this.oscSub.frequency, f0 * 0.5, now, tau);
+      if (this.oscSub && !shifting) this._w(9, this.oscSub.frequency, f0 * 0.5, tau, f0 * 0.001);
     }
 
     // ── layer levels ──────────────────────────────────────────────────────
@@ -405,25 +442,28 @@ export class EngineSynth {
     const rattleBase = this.rattleMix * (0.03 + 0.16 * ld * (0.4 + 0.6 * (1 - rev)));
 
     const tauL = 0.035;
-    if (this.bodyG) targetTo(this.bodyG.gain, bodyLvl, now, tauL);
+    if (this.bodyG) this._w(10, this.bodyG.gain, bodyLvl, tauL, 0.0015);
     if (this.tier >= 1) {
-      if (this.harmG) targetTo(this.harmG.gain, harmLvl, now, tauL);
-      if (this.intakeG) targetTo(this.intakeG.gain, intakeLvl, now, tauL);
+      if (this.harmG) this._w(11, this.harmG.gain, harmLvl, tauL, 0.0015);
+      if (this.intakeG) this._w(12, this.intakeG.gain, intakeLvl, tauL, 0.0012);
       if (this.intakeBP) {
-        targetTo(this.intakeBP.frequency, Math.min(lerp(420, 3400, rev), this.nyq), now, 0.05);
-        targetTo(this.intakeBP.Q, lerp(0.9, 2.4, th), now, 0.08);
+        this._w(13, this.intakeBP.frequency, Math.min(lerp(420, 3400, rev), this.nyq), 0.05, 12);
+        this._w(14, this.intakeBP.Q, lerp(0.9, 2.4, th), 0.08, 0.02);
       }
     }
     if (this.tier >= 2) {
-      if (this.whineG) targetTo(this.whineG.gain, whineLvl, now, tauL);
-      if (this.subG) targetTo(this.subG.gain, subLvl, now, tauL);
+      if (this.whineG) this._w(15, this.whineG.gain, whineLvl, tauL, 0.0015);
+      if (this.subG) this._w(16, this.subG.gain, subLvl, tauL, 0.0015);
       // Irregular mechanical rattle: a random walk at frame rate reads as metal
       // parts knocking, which a periodic LFO never does.
       this._rattlePhase += d * (6 + 26 * rev);
       const wobble = 0.55 + 0.45 * Math.sin(this._rattlePhase * 2.7)
         * (0.4 + 0.6 * this._rng.next());
-      if (this.rattleG) targetTo(this.rattleG.gain, rattleBase * wobble, now, 0.02);
-      if (this.rattleLP) targetTo(this.rattleLP.frequency, Math.min(lerp(700, 2600, rev), this.nyq), now, 0.08);
+      if (this.rattleG && now >= this._rattleHoldUntil) {
+        // The rattle is meant to jitter — a tight epsilon would smooth it away.
+        this._w(17, this.rattleG.gain, rattleBase * wobble, 0.02, 0.0004);
+      }
+      if (this.rattleLP) this._w(18, this.rattleLP.frequency, Math.min(lerp(700, 2600, rev), this.nyq), 0.08, 10);
     }
 
     // ── resonant lowpass driven by throttle (the big "on power" cue) ───────
@@ -431,13 +471,13 @@ export class EngineSynth {
     const cut = clamp(lerp(560, 6200, openness) * (0.62 + 0.38 * ld), 260, Math.min(9000, this.nyq));
     // Distance also darkens the tone (air absorption).
     const distDark = 1 / (1 + this.distance * 0.055);
-    targetTo(this.lpf.frequency, cut * lerp(0.55, 1, distDark), now, 0.03);
-    targetTo(this.lpf.Q, lerp(0.85, 4.6, th) * (this.tier === 0 ? 0.5 : 1), now, 0.06);
-    targetTo(this.formant.frequency, lerp(230, 520, rev), now, 0.06);
-    targetTo(this.formant.gain, 2.5 + 4.0 * ld, now, 0.06);
+    this._w(19, this.lpf.frequency, cut * lerp(0.55, 1, distDark), 0.03, 6);
+    this._w(20, this.lpf.Q, lerp(0.85, 4.6, th) * (this.tier === 0 ? 0.5 : 1), 0.06, 0.015);
+    this._w(21, this.formant.frequency, lerp(230, 520, rev), 0.06, 2);
+    this._w(22, this.formant.gain, 2.5 + 4.0 * ld, 0.06, 0.02);
 
     // Saturation rises with load — the motor "straining" sound.
-    if (this.driveG) targetTo(this.driveG.gain, lerp(0.75, 2.15, ld * (0.4 + 0.6 * th)), now, 0.05);
+    if (this.driveG) this._w(23, this.driveG.gain, lerp(0.75, 2.15, ld * (0.4 + 0.6 * th)), 0.05, 0.004);
 
     // ── gear shift dip + blip ─────────────────────────────────────────────
     this._shiftCooldown = Math.max(0, this._shiftCooldown - d);
@@ -470,8 +510,8 @@ export class EngineSynth {
     // ── rev limiter ───────────────────────────────────────────────────────
     const limitingTarget = (this.rpmN > 0.975 && th > 0.5) ? 1 : 0;
     this.limiting = damp(this.limiting, limitingTarget, 14, d);
-    if (this.limitAmp) targetTo(this.limitAmp.gain, 0.30 * this.limiting, now, 0.02);
-    if (this.limitPitch) targetTo(this.limitPitch.gain, 34 * this.limiting, now, 0.02);
+    if (this.limitAmp) this._w(24, this.limitAmp.gain, 0.30 * this.limiting, 0.02, 0.002);
+    if (this.limitPitch) this._w(25, this.limitPitch.gain, 34 * this.limiting, 0.02, 0.2);
     // Pull the base level down while limiting so the bounce reads as a cut.
     const limCut = 1 - 0.18 * this.limiting;
 
@@ -479,14 +519,16 @@ export class EngineSynth {
     // Idle is quiet; the motor should come alive with revs, not just exist.
     const activity = 0.22 + 0.78 * clamp01(0.35 * rev + 0.75 * th + 0.35 * ld);
     const tierScale = this.tier === 0 ? 0.72 : this.tier === 1 ? 0.9 : 1;
-    const playerBias = this.isPlayer ? 1.18 : 1.0;
-    const target = audible ? activity * tierScale * playerBias * limCut * 0.55 : 0.0001;
+    const playerBias = this.isPlayer ? 1.12 : 1.0;
+    // BASE_LEVEL is calibrated so one flat-out car at 1 m sits near −16 dBFS on
+    // the engine bus, leaving headroom for eight of them plus tires and music.
+    const target = audible ? activity * tierScale * playerBias * limCut * BASE_LEVEL : 0.0001;
     this.level = target;
-    targetTo(this.out.gain, target, now, 0.05);
+    this._w(26, this.out.gain, target, 0.05, 0.0015);
 
     if (this.send) {
       const revAmt = 0.10 + 0.14 * clamp01(this.distance / 18);
-      targetTo(this.send.gain, audible ? revAmt : 0, now, 0.2);
+      this._w(27, this.send.gain, audible ? revAmt : 0, 0.2, 0.004);
     }
 
     this._prevRpmN = this.rpmN;
@@ -495,6 +537,8 @@ export class EngineSynth {
   /** Momentary drivetrain interruption + a pitch blip. */
   _shift(now, up) {
     if (!this.env) return;
+    this._shiftHoldUntil = now + (up ? 0.16 : 0.10);
+    this._rattleHoldUntil = now + 0.09;
     const g = this.env.gain;
     holdParam(g, now);
     if (up) {
@@ -517,12 +561,16 @@ export class EngineSynth {
       expTo(rg, 0.004, now + 0.075);
     }
     // A brief pitch dip on the way up (the motor unloads then re-catches).
-    if (up && this.oscBody) {
-      const f = this.oscBody.frequency;
-      const cur = fin(f.value, this.f0);
-      holdParam(f, now);
-      rampTo(f, cur * 0.90, now + 0.05);
-      rampTo(f, cur, now + 0.14);
+    if (up) {
+      for (const [o, ratio] of [[this.oscBody, 1], [this.oscHarm, this.harmRatio],
+        [this.oscWhine, this.whineRatio], [this.oscSub, 0.5]]) {
+        if (!o) continue;
+        const f = o.frequency;
+        const cur = fin(f.value, this.f0 * ratio);
+        holdParam(f, now);
+        rampTo(f, cur * 0.895, now + 0.05);
+        rampTo(f, cur, now + 0.145);
+      }
     }
   }
 

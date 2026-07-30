@@ -290,6 +290,72 @@ Emit with `game.bus.emit(name, payload)`, listen with `game.bus.on(name, fn)`.
 'audio:music'        { intent }       // 'menu'|'race'|'finalLap'|'victory'
 ```
 
+## Optional contract extensions
+
+Fields a producer MAY supply and a consumer MUST treat as optional. Each one has a
+documented fallback, so an absent field degrades a feature — it never breaks a system.
+Anything added here must keep that property.
+
+| Field | Producer | Consumer | If absent |
+|---|---|---|---|
+| `CarDef.exhausts: [[x,y,z], …]` | vehicle | fx | No exhaust puffs. Correct default — these are electric RC cars. |
+| `CarDef.nozzles: [[x,y,z], …]` | vehicle | fx | Nitro jet origins synthesized from wheel `restPosition`. |
+| `TrackData.environment.weather` | track | fx | Inferred from `environment.skybox` (indoor ⇒ dust motes, outdoor ⇒ pollen). |
+| `prop.userData.material: 'metal'\|'glass'` | track | audio | Generic clatter instead of a material-specific impact. |
+| `Car.effects.submerged: 0..1` | gameplay | audio | Underwater filter falls back to `dominantSurfaceId === 9`, which works. |
+
+### Fields gameplay adds to `Car` (beyond the Car contract)
+
+`PickupSystem` / `EffectsLayer` write these every fixed step. They are public — the
+vehicle sim, FX, renderer and UI are all expected to read them.
+
+| Field | Owner | Meaning |
+|---|---|---|
+| `effectMods: {grip,torque,steer,brake,maxSpeed,downforce,antiRoll}` | Effects | Handling multipliers, `1` = normal. **The single channel the vehicle sim must read** — do not also read `car.effects` directly, or effects apply twice. |
+| `effectVisual: {boost,frost,shield,squash,spark,soak,blind}` | Effects | Eased 0..1 weights for renderer/FX. Never snaps. |
+| `shieldCharges: int` | Effects | Hits the bubble still absorbs. `effects.shielded > 0` alone does **not** block. |
+| `invulnerable: number` | Respawn | `> 0` blocks weapon damage **without** burning a shield charge. |
+| `hasBomb`, `bombFuse` | Bomb | Holder flag + fuse; `bombFuse` mirrors `effects.bomb`. |
+| `hazardSurfaceId: number` | PickupSystem | `15` while inside an oil slick. Slicks are published **out of band**, not through the collision mesh, because `addStaticGeometry` is append-only and a slick expires. Grip lookup must be `car.hazardSurfaceId \|\| wheel.surfaceId`. |
+| `weapon.{name,icon,ready,rolling,uses,aimMode,dual}` | PickupSystem | Extends the `{id,ammo,chargeT}` contract. **While `ready === false` the `id` is a flickering display value — never act on it.** |
+
+Extra `car.effects` keys beyond the documented six: `blinded`, `soaked`, `bomb`.
+
+### Additional EventBus names
+
+Emitted by core: `game:state {state, prev}`.
+Emitted by audio: `audio:mute {muted}`.
+Emitted by gameplay: `race:phase`, `race:finalLap`, `race:wrongway`, `race:lapRecord`,
+`effect:start`, `effect:end`, `weapon:blocked`, `weapon:spawn`, `weapon:expire`,
+`pickup:roll`, `pickup:respawn`, `bomb:attach|transfer|tick|explode|refused`.
+Extra fields on canonical events: `pickup:assigned.uses`, `car:respawn.reason`
+(`manual|stuck|upsideDown|offTrack|fell`).
+
+**Payload lifetime differs by producer.** Physics event payloads are POOLED (64-entry
+ring) — read them synchronously or copy. Gameplay payloads are freshly allocated and
+their `worldPoint` is a private clone — listeners may retain them.
+
+### Track requirements
+
+A track needs **≥ 2 checkpoints** (realistically 6+) and a centreline. Degradation:
+
+- No `checkpoints` ⇒ `freeRoam`: countdown and standings still work, but no laps and no finish.
+- No `spline` ⇒ falls back to `aiPath.nodes` ⇒ `checkpoints` via closed Catmull-Rom.
+  All three absent ⇒ no wrong-way, no off-track, and **no auto-generated pickup pads,
+  therefore no weapons at all**.
+- Checkpoint `quaternion` **and** spline both absent ⇒ gate direction is meaningless and
+  laps never count. This is the one genuinely fragile combination.
+
+`environment.weather` shape:
+```js
+{ motes: bool, moteStyle: 'dust'|'pollen'|'snow'|'ash', leaves: bool,
+  leafColors: [hex, …], godRays: bool, wind: [x,y,z], boxSize: number }
+```
+
+Tracks that want the authored look described in their brief should set this explicitly —
+"dust motes in shafts of light" in the museum and drifting pollen in the garden are
+authored atmosphere, not something the inference can guess well.
+
 ## Frame budget (ms, at 1600×900 on iGPU)
 
 | System | budget |

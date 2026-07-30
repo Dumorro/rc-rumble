@@ -51,7 +51,7 @@ export class Dust {
 
     /** @type {SprayEmitter[]} carId*4 + wheel */
     this.emitters = [];
-    for (let i = 0; i < CONFIG.race.maxCars * 4; i++) this.emitters.push(new SprayEmitter());
+    for (let i = 0; i < Math.max(8, CONFIG.race.maxCars) * 4; i++) this.emitters.push(new SprayEmitter());
 
     this.styles = {};
     this.stats = { spawned: 0 };
@@ -402,12 +402,9 @@ export class Dust {
     common.rot = undefined;
 
     // Colour: lerp between the surface's two tints per particle so a plume has
-    // internal variation instead of reading as one flat wash.
-    const setTint = (t) => {
-      common.r = lerp(c1[0], c2[0], t);
-      common.g = lerp(c1[1], c2[1], t);
-      common.b = lerp(c1[2], c2[2], t);
-    };
+    // internal variation instead of reading as one flat wash. `tint()` is a
+    // module function, not a closure, because this runs per wheel per frame.
+    const setTint = (t) => tint(common, c1, c2, t);
 
     switch (fx.spray) {
       case SPRAY.PLUME: {
@@ -589,6 +586,14 @@ export class Dust {
 
   reset() { for (const e of this.emitters) e.reset(); }
   dispose() { this.emitters.length = 0; }
+}
+
+/** Blend an emitter's two surface tints into a spawn-options record. */
+function tint(o, c1, c2, t) {
+  o.r = c1[0] + (c2[0] - c1[0]) * t;
+  o.g = c1[1] + (c2[1] - c1[1]) * t;
+  o.b = c1[2] + (c2[2] - c1[2]) * t;
+  return o;
 }
 
 /** One shared options record — spawn() reads it synchronously and never keeps it. */

@@ -60,8 +60,16 @@ const OVERCAST = 0.018;
 const MIN_NORMAL_DOT = 0.31;
 /** Sphere-cast radius as a fraction of the wheel radius. */
 const SPHERE_FRAC = 0.55;
-/** Hard sanity clamp on strut load, as a multiple of the static corner load. */
-const MAX_LOAD_FACTOR = 26.0;
+/**
+ * Hard sanity clamp on strut load, as a multiple of the static corner load.
+ *
+ * A valve should clamp, not launch. At 26x a single strut could deliver 219 N
+ * to a 1.6 kg car — 1.14 m/s of delta-v per wheel in one step, 4.5 m/s across
+ * four. 12x still lets a hard landing spike well past anything the spring plus
+ * bump stop can generate on its own (the spring reaches ~2x static at full
+ * travel and the bump stop adds ~3x more), so it never truncates normal use.
+ */
+const MAX_LOAD_FACTOR = 12.0;
 /** Damper force clamp, as a multiple of the static corner load. */
 const MAX_DAMPER_FACTOR = 9.0;
 /** Extra cast lift when falling fast, so a landing is never tunnelled (m). */
@@ -95,8 +103,17 @@ export class Suspension {
     this.fallbackGroundY = 0;
     this.useFallbackGround = true;
 
-    /** Layer mask for the (rare) dynamic-body suspension cast. */
-    this.castMask = Layer.TRACK | Layer.DEFAULT | Layer.PROP;
+    /**
+     * Layer mask for the edge-rescue sphere cast. STATICS ONLY, deliberately.
+     *
+     * `PhysicsWorld.sphereCast` is exact against static meshes but approximates
+     * every DYNAMIC body by its bounding sphere, which for a box prop is up to
+     * sqrt(3) larger than the box. Including PROP here meant a wheel whose ray
+     * missed near a traffic cone would ride the cone's invisible bounding
+     * sphere and lift the car off the ground for no visible reason. This cast
+     * exists to catch thin static track lips, and those are exact.
+     */
+    this.castMask = Layer.NONE;
 
     /** Per-wheel scratch, sized once. */
     this._rawForce = new Float64Array(4);
@@ -137,8 +154,9 @@ export class Suspension {
    * Cast, solve and apply all four struts. Leaves every wheel's contact,
    * load, camber and ground-frame axes ready for the tyre pass.
    * @param {number} dt
+   * @param {number} [arbScale] `car.effectMods.antiRoll` — 1 = normal
    */
-  update(dt) {
+  update(dt, arbScale = 1) {
     const car = this.car;
     const body = car.body;
     const wheels = car.wheels;
@@ -278,6 +296,7 @@ export class Suspension {
       if (!w.contact) { this._rawForce[i] = 0; continue; }
       const k = w.isFront ? this.springFront : this.springRear;
       const comp = this._comp[i];
+      const rate = this._damper[i];        // > 0 while the strut is compressing
       let f = k * comp;
 
       // Progressive bump stop.
@@ -287,13 +306,17 @@ export class Suspension {
         const x = (comp - stopAt) / span;
         f += k * this.bumpStopRate * x * x * span;
       }
-      // Extra push-back when the strut is being driven past its stop.
+      // Driven clean past the stop — a very hard landing, or the floor moved.
+      // This has to be a STOP, not a trampoline: it is gated on the strut
+      // still closing and capped in depth, because an ungated depth spring
+      // stores the whole impact and fires the car back out at absurd speed.
       if (w.contactDepth > 0) {
-        f += k * this.bumpStopRate * 1.4 * w.contactDepth;
+        const depth = Math.min(w.contactDepth, this.travel * 0.6);
+        const closing = clamp01(rate * 4);
+        f += k * this.bumpStopRate * 0.9 * depth * (0.25 + 0.75 * closing);
       }
 
       // Damper: bump and rebound rates differ.
-      const rate = this._damper[i];
       const cBump = w.isFront ? this.bumpFront : this.bumpRear;
       const cReb = w.isFront ? this.reboundFront : this.reboundRear;
       const c = rate >= 0 ? cBump : cReb;
@@ -306,8 +329,8 @@ export class Suspension {
     }
 
     // ── pass 3: anti-roll bars ─────────────────────────────────────────
-    this.arbMomentFront = this._applyARB(0, 1, this.arbFront);
-    this.arbMomentRear = this._applyARB(2, 3, this.arbRear);
+    this.arbMomentFront = this._applyARB(0, 1, this.arbFront * arbScale);
+    this.arbMomentRear = this._applyARB(2, 3, this.arbRear * arbScale);
 
     // ── pass 4: clamp, store, apply ────────────────────────────────────
     this.totalLoad = 0;

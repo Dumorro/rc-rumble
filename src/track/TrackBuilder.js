@@ -436,6 +436,27 @@ export class TrackBuilder {
     return this;
   }
 
+  /**
+   * An invisible solid volume. The workhorse for making a visually complex prop
+   * (a skeleton's legs, a bush, a fence) collide as something simple and cheap.
+   * @param {number[]} center `[x, y, z]` — y is the BOTTOM of the volume
+   * @param {number|number[]} size `s` or `[w, h, d]`
+   */
+  blocker(center, size, o = {}) {
+    const s = Array.isArray(size) ? size : [size, size, size];
+    const w = s[0] ?? 0.5, h = s[1] ?? w, d = s[2] ?? w;
+    const geo = o.round
+      ? G.cylinderMeters(w * 0.5, w * 0.5, h, o.seg ?? 10)
+      : G.boxMeters(w, h, d);
+    const c = toXYZ(center);
+    _v.set(c[0], c[1] + h * 0.5, c[2]);
+    _q.setFromAxisAngle(UP, o.rotation ?? 0);
+    _m.compose(_v, _q, _s.set(1, 1, 1));
+    this._collision.addGeometry(geo, o.surfaceId ?? SurfaceId.DEFAULT, _m);
+    geo.dispose();
+    return this;
+  }
+
   _expandBounds(geo) {
     geo.computeBoundingBox();
     if (geo.boundingBox && !geo.boundingBox.isEmpty()) this.bounds.union(geo.boundingBox);
@@ -621,9 +642,10 @@ export class TrackBuilder {
       stepMeters: o.step ?? 0.7,
       uOffset: -half,
     });
-    const material = o.decal
-      ? this.decal({ key: o.key ?? `stripe:${mat}`, texture: null, color: o.color ?? 0xffffff, unlit: false, opacity: o.opacity ?? 1 })
-      : this.mat(mat, o.matOpts);
+    const material = o.materialRef
+      ?? (o.decal
+        ? this.decal({ key: o.key ?? `stripe:${mat}`, texture: o.texture ?? null, color: o.color ?? 0xffffff, unlit: !!o.unlit, opacity: o.opacity ?? 1 })
+        : this.mat(mat, o.matOpts));
     for (const band of bands) {
       const p = L[band.index];
       if (!p || p.mat === undefined) { band.geometry.dispose(); continue; }
@@ -643,11 +665,13 @@ export class TrackBuilder {
     const mat = o.material ?? 'wood/pine_planks';
     const sid = o.surfaceId ?? SurfaceId.WOOD;
     const overhang = o.overhang ?? 0.05;
+    // With `flip`, cross(d, tangent) is negated, which turns these three bands
+    // into: left flank facing out, floor facing down, right flank facing out.
     const L = [
-      { w: -1, x: -overhang, y: 0, sid: null },
-      { w: -1, x: -overhang, y: -depth, sid, mat },          // left side wall
-      { w: 1, x: overhang, y: -depth, sid, mat },             // bottom (faces down)
-      { w: 1, x: overhang, y: 0, sid, mat },                  // right side wall
+      { w: -1, x: -overhang, y: 0, sid, mat },                // left flank
+      { w: -1, x: -overhang, y: -depth, sid, mat },           // underside
+      { w: 1, x: overhang, y: -depth, sid, mat },             // right flank
+      { w: 1, x: overhang, y: 0, sid: null },
     ];
     const bands = this.spline.loft(L, {
       from: o.from ?? 0, to: o.to ?? 1, stepMeters: o.step ?? 1.1, flip: true,
@@ -1510,7 +1534,9 @@ export class TrackBuilder {
         rotation: [0, this.rnd() * Math.PI * 2, 0],
         scale: o.scaleRange ? this.rndRange(o.scaleRange[0], o.scaleRange[1]) : (o.propOpts?.scale ?? 1),
         instanced: o.instanced !== false,
-        seed: this.rndInt(0, 9999),
+        // A caller that pins `seed` in propOpts wants ONE geometry variant (and
+        // therefore one InstancedMesh); otherwise vary it.
+        seed: o.propOpts?.seed ?? this.rndInt(0, 9999),
       });
       void res;
     }

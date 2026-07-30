@@ -1,0 +1,8 @@
+- generic [ref=f96e3]:
+  - generic [ref=f96e6]:
+    - heading "Não foi possível encontrar a página deste localhost" [level=1] [ref=f96e7]
+    - paragraph [ref=f96e9]:
+      - text: "Nenhuma página da web foi encontrada para o endereço da Web:"
+      - strong [ref=f96e10]: http://localhost:4901/?debug=1&skipmenu=1&track=toy_museum&laps=2
+    - generic [ref=f96e11]: HTTP ERROR 404
+  - button "Recarregar" [ref=f96e14] [cursor=pointer]

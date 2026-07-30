@@ -339,18 +339,38 @@ export function emitUsed(game, { carId, weaponId, targetId = -1 }) {
   game?.bus?.emit('pickup:used', { carId, weaponId, targetId });
 }
 
-/** `weapon:hit` — the canonical "a weapon connected" event. */
+/**
+ * `weapon:hit` — the canonical "a weapon connected" event.
+ *
+ * The payload is freshly built and its `worldPoint` is a private copy, so a
+ * listener may safely retain it (unlike the pooled physics collision events).
+ * Weapon hits happen a handful of times per car per race, so the allocation is
+ * nowhere near a hot path and it removes an entire class of aliasing bug for
+ * the FX / audio / UI systems.
+ */
 export function emitHit(game, payload) {
-  game?.bus?.emit('weapon:hit', payload);
+  const bus = game?.bus;
+  if (!bus) return;
+  bus.emit('weapon:hit', {
+    carId: payload.carId,
+    sourceId: payload.sourceId ?? -1,
+    weaponId: payload.weaponId ?? null,
+    worldPoint: payload.worldPoint ? payload.worldPoint.clone() : null,
+    impulse: payload.impulse ?? 0,
+  });
 }
 
 /** Extra, documented: a projectile appeared / vanished (FX + audio hooks). */
 export function emitSpawn(game, { weaponId, carId, position, kind }) {
-  game?.bus?.emit('weapon:spawn', { weaponId, carId, position, kind });
+  game?.bus?.emit('weapon:spawn', {
+    weaponId, carId, kind, position: position ? position.clone() : null,
+  });
 }
 
 export function emitExpire(game, { weaponId, carId, position, kind }) {
-  game?.bus?.emit('weapon:expire', { weaponId, carId, position, kind });
+  game?.bus?.emit('weapon:expire', {
+    weaponId, carId, kind, position: position ? position.clone() : null,
+  });
 }
 
 export function shake(game, amount, duration = 0.3) {

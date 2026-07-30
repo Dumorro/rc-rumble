@@ -184,6 +184,9 @@ export class CameraDirector {
     this._crashPoint = new THREE.Vector3();
     this._hasCrashPoint = false;
     this._prevLookBack = false;
+    this._wasAirborne = false;
+    this._fallVy = 0;
+    this._lastLandEvent = -100;
     this._dofOwned = false;
     this._timers = [];
     this._unsub = [];
@@ -291,6 +294,9 @@ export class CameraDirector {
     this._lastBigAir = -100;
     this._lastCrash = -100;
     this._landGrace = 0;
+    this._hasCrashPoint = false;
+    this._wasAirborne = false;
+    this._fallVy = 0;
     this._autoOrbit = false;
     this.targetCar = null;
     this.carState.reset();
@@ -330,8 +336,12 @@ export class CameraDirector {
     for (const off of this._unsub) { try { off(); } catch (err) { /* ignore */ } }
     this._unsub.length = 0;
     this._timers.length = 0;
+    this._deactivateRig(this.rigs[this._activeMode]);
+    this._deactivateRig(this._blend.rig);
+    this._blend.rig = null;
     for (const k in this.rigs) this.rigs[k]?.dispose?.();
     this._cancelIntro();
+    this._releaseDof();
     return this;
   }
 
@@ -472,8 +482,23 @@ export class CameraDirector {
     return CHASE_PRESETS[this.mode]?.label ?? this.mode;
   }
 
-  /** Hand the camera to somebody else (garage preview, screenshot tool). */
-  setEnabled(v) { this.enabled = !!v; return this; }
+  /**
+   * Hand the camera to somebody else (garage preview, screenshot tool). While
+   * disabled the director writes nothing — and it lets go of the post-FX hooks it
+   * owns, so the borrower is not left with a frozen speed blur.
+   */
+  setEnabled(v) {
+    const next = !!v;
+    if (next === this.enabled) return this;
+    this.enabled = next;
+    if (!next) {
+      this._speedIntensity = 0;
+      const postfx = this.game?.renderer?.postfx;
+      try { postfx?.setSpeedIntensity?.(0); } catch (err) { /* ignore */ }
+      this._releaseDof();
+    }
+    return this;
+  }
 
   /** Hard reset every rig onto the current car. Cheap; safe to spam. */
   snap() { this._snapAll(); return this; }
@@ -510,6 +535,7 @@ export class CameraDirector {
 
     this._refreshContext(dt, alpha, rawDt);
     this._runTimers(rawDt);
+    this._detectLanding(dt);
     this._direct(dt);
     this._readInput();
     this._applyPending(dt);
@@ -601,7 +627,11 @@ export class CameraDirector {
           return;
         }
       } else if (top === 'replay') {
-        if (this.rigs.replay?.isDone?.()) { this.popMode(0.34); return; }
+        if (this.rigs.replay?.isDone?.()) {
+          this._hasCrashPoint = false;   // do not let a stale impact anchor a later cut
+          this.popMode(0.34);
+          return;
+        }
       }
     }
 
@@ -678,6 +708,11 @@ export class CameraDirector {
     if (!entry) return;
     const rig = this.rigs[entry.mode];
     if (!rig) return;
+
+    // Push-then-pop inside a single frame (tapping look-back) resolves back to the
+    // rig that is already live and settled. Re-activating it would snap it to its
+    // ideal pose for no reason, so just drop the request.
+    if (entry.mode === this._activeMode && this._blend.dur <= 0 && this._hasPose) return;
 
     const prevMode = this._activeMode;
     const prevRig = this.rigs[prevMode] ?? null;
@@ -1013,7 +1048,16 @@ export class CameraDirector {
     if (!e) return;
     const near = this._proximity(e.carId, e.worldPoint);
     if (near <= 0.02) return;
-    const v = Math.abs(Number.isFinite(e.impactSpeed) ? e.impactSpeed : 0);
+    this._lastLandEvent = this._time;
+    this._applyLanding(Math.abs(Number.isFinite(e.impactSpeed) ? e.impactSpeed : 0), near);
+  }
+
+  /**
+   * Landing kick. Reached either from the 'car:land' event or from our own
+   * airborne→grounded edge detection (below), because a vehicle build that does
+   * not emit the event should still land with a thump.
+   */
+  _applyLanding(v, near) {
     if (v < 1.6) return;
     const trauma = clamp01((v - 1.6) * this.tuning.landShake) * near;
     if (trauma > 0.004) {
@@ -1027,6 +1071,27 @@ export class CameraDirector {
       try { this.game.input?.rumble?.(clamp01(v / 12), clamp01(v / 18), 90); }
       catch (err) { /* ignore */ }
     }
+  }
+
+  /**
+   * Derive the landing impact ourselves from the airborne flag and the fall speed.
+   * Skipped if a 'car:land' event arrived recently, so we never double-thump.
+   */
+  _detectLanding(dt) {
+    const cs = this.carState;
+    if (!cs.valid) { this._wasAirborne = false; this._fallVy = 0; return; }
+    if (cs.airborne) {
+      if (!this._wasAirborne) this._fallVy = 0;
+      this._wasAirborne = true;
+      if (cs.velocity.y < this._fallVy) this._fallVy = cs.velocity.y;
+      return;
+    }
+    if (!this._wasAirborne) return;
+    this._wasAirborne = false;
+    const impact = Math.abs(this._fallVy);
+    this._fallVy = 0;
+    if (this._time - this._lastLandEvent < 0.3) return;   // the vehicle told us already
+    this._applyLanding(impact, 1);
   }
 
   _onAirborne(e) {
@@ -1068,6 +1133,9 @@ export class CameraDirector {
     if (e && cs.valid && e.carId !== undefined && e.carId !== cs.id) return;
     this.carState.reset();
     this.shaker.reset();
+    this._hasCrashPoint = false;
+    this._wasAirborne = false;
+    this._fallVy = 0;
     this._refreshContext(0, 0, 0);
     // Drop any transient cut and snap the chosen view behind the car.
     if (this._stack.length > 1) {

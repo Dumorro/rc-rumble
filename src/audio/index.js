@@ -14,7 +14,9 @@ export {
   impactRecipe, landRecipe, weaponFamily, resolveAmbience,
 } from './SFXSynth.js';
 export { MusicSystem } from './MusicSystem.js';
-export { Reverb, REVERB_PRESETS, renderImpulseResponse, resolveReverbName } from './Reverb.js';
+export {
+  Reverb, REVERB_PRESETS, renderImpulseResponse, resolveReverbName, reverbDescFromParams,
+} from './Reverb.js';
 export { Listener, WATER_SURFACE_ID } from './Listener.js';
 export { VoicePool, Voice, LoopHandle } from './VoicePool.js';
 export * as DSP from './DSP.js';

@@ -24,6 +24,7 @@
 
 import CONFIG from '../core/Config.js';
 import { clamp, clamp01, lerp } from '../core/MathUtils.js';
+import { engineTorqueFactor } from './Drivetrain.js';
 
 /** Exaggerated gravity magnitude used for all static-load maths. */
 export const G = Math.abs(CONFIG.physics.gravity ?? -19.6);
@@ -45,6 +46,12 @@ const TORQUE_AT_TOP = 0.78;
 
 /** Rolling-resistance coefficient (fraction of vertical load). */
 const ROLL_COEFF = 0.018;
+
+/** How far past the redline the limiter lets the engine run. Caps top speed. */
+const LIMITER_OVERRUN = 1.022;
+
+/** Measured gap between the ideal point-mass launch and the full simulation. */
+const SIM_LOSS_FACTOR = 1.36;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Defaults — every car inherits these and overrides what makes it special.
@@ -81,7 +88,7 @@ const BASE = {
 
   // ── performance intent ──────────────────────────────────────────────
   topSpeed: 9.0,           // m/s, wide-open in top gear on wood
-  accel: 8.0,              // m/s² peak thrust-limited acceleration
+  accel: 11.20,              // m/s² peak thrust-limited acceleration
   drive: '4wd',            // '4wd' | 'rwd' | 'fwd'
   /** Front torque share for 4WD (ignored for rwd/fwd). */
   torqueSplitFront: 0.42,
@@ -91,21 +98,27 @@ const BASE = {
 
   // ── engine / gearbox ────────────────────────────────────────────────
   redlineRpm: 14500,
-  limiterRpm: 15200,
+  /** null ⇒ redline × `LIMITER_OVERRUN`. The limiter is what caps top speed. */
+  limiterRpm: null,
   idleRpm: 1500,
-  /** Fractions of `topSpeed` at which each gear reaches the redline. */
-  gearSpeeds: [0.30, 0.52, 0.76, 1.00],
+  /**
+   * Fractions of `topSpeed` at which each gear reaches the redline.
+   * These are deliberately CLOSE together: a wide first gear would make the
+   * thrust collapse as 1/ratio and the car would crawl the last 30 % of its
+   * speed range. Tight ratios keep the pull flat all the way to the limiter.
+   */
+  gearSpeeds: [0.42, 0.62, 0.81, 1.00],
   shiftUpFrac: 0.955,     // of redline
   /**
    * Downshift below this fraction of the redline. MUST sit clear of the rpm you
    * land on after an upshift (≈ 0.55 for these ratios) or the box will hunt.
    */
-  shiftDownFrac: 0.455,
+  shiftDownFrac: 0.520,
   shiftTime: 0.11,        // s of reduced torque
   shiftTorqueDip: 0.16,   // torque multiplier during a shift
   reverseRatio: 3.05,     // relative to 1st
   reverseTopFrac: 0.34,   // of topSpeed
-  engineInertia: 1.05e-6, // kg·m² at the crank (reflected through the gears)
+  engineInertia: 4.5e-7,  // kg·m² at the crank (reflected through the gears)
   engineBraking: 0.115,   // fraction of peak torque at the redline, off-throttle
 
   // ── brakes ──────────────────────────────────────────────────────────
@@ -133,8 +146,8 @@ const BASE = {
     bumpRatio: 0.36,      // damping ratio, compression
     reboundRatio: 0.58,   // damping ratio, extension
     /** Anti-roll bar rates as a fraction of the corner spring rate. */
-    arbFront: 0.42,
-    arbRear: 0.26,
+    arbFront: 0.30,
+    arbRear: 0.18,
     /** Progressive bump stop: engages past this fraction of travel. */
     bumpStopStart: 0.84,
     bumpStopRate: 9.0,    // × spring rate at full compression
@@ -146,7 +159,7 @@ const BASE = {
     camberPerComp: -0.55,
     /** How much of the tyre's lateral force is applied above the contact
      *  patch, toward the COM. Tames roll-over without hiding weight transfer. */
-    forceLift: 0.25,
+    forceLift: 0.18,
   },
 
   // ── tyres ───────────────────────────────────────────────────────────
@@ -183,6 +196,12 @@ const BASE = {
 
   // ── aero & air behaviour ────────────────────────────────────────────
   aero: {
+    /**
+     * Drag at `topSpeed`, as a fraction of the thrust available there. Below 1
+     * the car is REV-LIMITER limited rather than drag limited — which is how
+     * Re-Volt feels: it pulls hard all the way and then holds a hard ceiling.
+     */
+    dragFraction: 0.40,
     /** Extra drag multiplier on top of the derived value. */
     dragScale: 1.0,
     /** Sideways drag, as a multiple of the longitudinal coefficient. */
@@ -241,7 +260,7 @@ const RAW = [
     hullHalf: [0.080, 0.031, 0.120], hullCenterY: 0.014,
     comHeight: 0.040,
     topSpeed: 7.45,
-    accel: 6.55,
+    accel: 9.17,
     drive: '4wd',
     torqueSplitFront: 0.46,
     diff: 'locked',
@@ -253,7 +272,7 @@ const RAW = [
     susp: {
       travel: 0.046, frequency: 4.55, frequencyRear: 4.35,
       bumpRatio: 0.40, reboundRatio: 0.62,
-      arbFront: 0.30, arbRear: 0.22,
+      arbFront: 0.24, arbRear: 0.16,
       camberStatic: -0.020,
     },
     tyre: { radius: 0.0345, width: 0.032, grip: 1.10, peakSlipAngle: 0.170, relaxLat: 0.105 },
@@ -276,7 +295,7 @@ const RAW = [
     hullHalf: [0.082, 0.029, 0.142], hullCenterY: 0.012,
     comHeight: 0.038,
     topSpeed: 8.55,
-    accel: 7.55,
+    accel: 10.57,
     drive: '4wd',
     torqueSplitFront: 0.40,
     diff: 'lsd', diffLock: 0.55,
@@ -298,7 +317,7 @@ const RAW = [
     hullHalf: [0.085, 0.046, 0.150], hullCenterY: 0.026,
     comHeight: 0.052,
     topSpeed: 8.15,
-    accel: 6.85,
+    accel: 9.59,
     drive: 'fwd',
     diff: 'open',
     chassis: 'metal',
@@ -310,8 +329,8 @@ const RAW = [
     susp: {
       travel: 0.042, frequency: 4.95, frequencyRear: 5.35,
       bumpRatio: 0.40, reboundRatio: 0.60,
-      arbFront: 0.50, arbRear: 0.20,
-      forceLift: 0.32,
+      arbFront: 0.40, arbRear: 0.16,
+      forceLift: 0.26,
     },
     tyre: { grip: 1.02, gripRear: 0.99, width: 0.026, peakSlipAngle: 0.155 },
     aero: { lateralDrag: 4.1, downforce: 0.18, airPitch: 0.0195, selfLevel: 0.0115 },
@@ -334,7 +353,7 @@ const RAW = [
     hullHalf: [0.088, 0.038, 0.135], hullCenterY: 0.052,
     comHeight: 0.072,
     topSpeed: 8.30,
-    accel: 8.15,
+    accel: 11.41,
     drive: '4wd',
     torqueSplitFront: 0.48,
     diff: 'locked',
@@ -346,10 +365,10 @@ const RAW = [
     susp: {
       travel: 0.072, anchorY: 0.030, frequency: 3.55, frequencyRear: 3.45,
       bumpRatio: 0.44, reboundRatio: 0.66,
-      arbFront: 0.20, arbRear: 0.16,
+      arbFront: 0.16, arbRear: 0.13,
       bumpStopStart: 0.80, bumpStopRate: 7.0,
       camberStatic: -0.012, camberPerComp: -0.30,
-      forceLift: 0.42,
+      forceLift: 0.34,
     },
     tyre: {
       radius: 0.050, width: 0.044, grip: 1.13,
@@ -381,7 +400,7 @@ const RAW = [
     hullHalf: [0.086, 0.024, 0.156], hullCenterY: 0.006,
     comHeight: 0.030,
     topSpeed: 9.10,
-    accel: 8.35,
+    accel: 11.69,
     drive: 'rwd',
     diff: 'lsd', diffLock: 0.70,
     chassis: 'metal',
@@ -394,9 +413,9 @@ const RAW = [
     susp: {
       travel: 0.026, anchorY: 0.006, frequency: 6.35, frequencyRear: 6.05,
       bumpRatio: 0.34, reboundRatio: 0.56,
-      arbFront: 0.55, arbRear: 0.34,
+      arbFront: 0.42, arbRear: 0.26,
       camberStatic: -0.045, camberPerComp: -0.70,
-      forceLift: 0.18,
+      forceLift: 0.15,
     },
     tyre: {
       radius: 0.030, width: 0.032, grip: 1.09, gripRear: 1.13,
@@ -422,7 +441,7 @@ const RAW = [
     hullHalf: [0.048, 0.024, 0.168], hullCenterY: 0.010,
     comHeight: 0.031,
     topSpeed: 9.55,
-    accel: 8.85,
+    accel: 12.39,
     drive: 'rwd',
     diff: 'lsd', diffLock: 0.62,
     chassis: 'plastic',
@@ -431,14 +450,14 @@ const RAW = [
     brakeTorque: 1.32, brakeBiasFront: 0.64,
     steerMax: 0.470, steerMaxFast: 0.180,
     counterSteerAssist: 0.0058,
-    redlineRpm: 16200, limiterRpm: 17000,
-    gearSpeeds: [0.28, 0.50, 0.74, 1.00],
+    redlineRpm: 16200,
+    gearSpeeds: [0.40, 0.60, 0.80, 1.00],
     susp: {
       travel: 0.028, anchorY: 0.008, frequency: 6.85, frequencyRear: 6.45,
       bumpRatio: 0.33, reboundRatio: 0.55,
-      arbFront: 0.62, arbRear: 0.40,
+      arbFront: 0.50, arbRear: 0.32,
       camberStatic: -0.055, camberPerComp: -0.85,
-      forceLift: 0.14,
+      forceLift: 0.12,
     },
     tyre: {
       radius: 0.032, width: 0.036, grip: 1.15, gripRear: 1.20,
@@ -470,7 +489,7 @@ const RAW = [
     hullHalf: [0.090, 0.026, 0.160], hullCenterY: 0.010,
     comHeight: 0.033,
     topSpeed: 9.85,
-    accel: 9.55,
+    accel: 13.37,
     drive: '4wd',
     torqueSplitFront: 0.38,
     diff: 'lsd', diffLock: 0.75,
@@ -479,13 +498,13 @@ const RAW = [
     inertiaScale: [1.05, 1.25, 0.90],
     brakeTorque: 1.36, brakeBiasFront: 0.60,
     steerMax: 0.485, steerMaxFast: 0.190,
-    redlineRpm: 15800, limiterRpm: 16500,
+    redlineRpm: 15800,
     susp: {
       travel: 0.030, anchorY: 0.009, frequency: 6.45, frequencyRear: 6.25,
       bumpRatio: 0.34, reboundRatio: 0.56,
-      arbFront: 0.56, arbRear: 0.40,
+      arbFront: 0.44, arbRear: 0.30,
       camberStatic: -0.048, camberPerComp: -0.78,
-      forceLift: 0.16,
+      forceLift: 0.13,
     },
     tyre: {
       radius: 0.031, width: 0.034, grip: 1.17,
@@ -513,7 +532,7 @@ const RAW = [
     hullHalf: [0.080, 0.026, 0.150], hullCenterY: 0.010,
     comHeight: 0.034,
     topSpeed: 10.10,
-    accel: 9.20,
+    accel: 12.88,
     drive: 'rwd',
     diff: 'lsd', diffLock: 0.50,
     chassis: 'glass',
@@ -523,13 +542,13 @@ const RAW = [
     handbrakeTorque: 1.60,
     steerMax: 0.520, steerMaxFast: 0.205,
     counterSteerAssist: 0.0050,
-    redlineRpm: 16800, limiterRpm: 17600,
+    redlineRpm: 16800,
     susp: {
       travel: 0.032, anchorY: 0.010, frequency: 6.05, frequencyRear: 5.75,
       bumpRatio: 0.32, reboundRatio: 0.54,
-      arbFront: 0.48, arbRear: 0.30,
+      arbFront: 0.38, arbRear: 0.22,
       camberStatic: -0.042, camberPerComp: -0.72,
-      forceLift: 0.15,
+      forceLift: 0.12,
     },
     tyre: {
       radius: 0.031, width: 0.030, grip: 1.12, gripRear: 1.14,
@@ -635,9 +654,20 @@ export function defineCar(raw) {
     [+halfTr, s.anchorYRear, d.axleZRear],
   ];
 
+  // ── driven-wheel mask (needed before the torque maths) ──────────────
+  const fwd = d.drive === 'fwd' || d.drive === '4wd';
+  const rwd = d.drive === 'rwd' || d.drive === '4wd';
+  d.driven = [fwd, fwd, rwd, rwd];
+  d.driveSplit = d.drive === '4wd'
+    ? [d.torqueSplitFront * 0.5, d.torqueSplitFront * 0.5,
+      (1 - d.torqueSplitFront) * 0.5, (1 - d.torqueSplitFront) * 0.5]
+    : d.drive === 'fwd' ? [0.5, 0.5, 0, 0] : [0, 0, 0.5, 0.5];
+  d.drivenCount = d.driven.reduce((n, v) => n + (v ? 1 : 0), 0);
+
   // ── drivetrain ──────────────────────────────────────────────────────
   const redlineOmega = (d.redlineRpm * 2 * Math.PI) / 60;
   d.redlineOmega = redlineOmega;
+  d.limiterRpm = d.limiterRpm ?? d.redlineRpm * LIMITER_OVERRUN;
   d.limiterOmega = (d.limiterRpm * 2 * Math.PI) / 60;
   d.idleOmega = (d.idleRpm * 2 * Math.PI) / 60;
 
@@ -649,32 +679,33 @@ export function defineCar(raw) {
   d.gearCount = d.gearRatios.length;
   d.reverseGearRatio = redlineOmega / Math.max(0.5, (d.topSpeed * d.reverseTopFrac) / t.radius);
 
+  /**
+   * Rotating (unsprung + driveline) mass, expressed as an equivalent linear
+   * mass at the contact patch: m_rot = Σ I / r². Accelerating the car also has
+   * to spin the wheels and the motor up, and in 1st gear the reflected motor
+   * inertia is far from negligible — ignoring it made the cars ~4× too slow.
+   */
+  const iDrivenFirst = t.inertia
+    + (d.drivenCount > 0 ? (d.engineInertia * d.gearRatios[0] * d.gearRatios[0]) / d.drivenCount : 0);
+  d.rotatingMass = (d.drivenCount * iDrivenFirst + (4 - d.drivenCount) * t.inertia)
+    / (t.radius * t.radius);
+  d.effectiveMass = d.mass + d.rotatingMass;
+
   /** Peak wheel torque needed for `accel`, summed over the driven wheels. */
-  const peakWheelTorque = d.accel * d.mass * t.radius;
+  const peakWheelTorque = d.accel * d.effectiveMass * t.radius;
   d.peakWheelTorque = peakWheelTorque;
   d.enginePeakTorque = peakWheelTorque / d.gearRatios[0];
 
   /** Shift speeds (m/s) per gear — where the redline lands. */
   d.gearTopSpeeds = d.gearSpeeds.map((f) => d.topSpeed * f);
 
-  // ── aero, sized so wide-open in top gear settles at `topSpeed` ──────
+  // ── aero, sized as a fraction of the thrust available at `topSpeed` ─
   const topRatio = d.gearRatios[d.gearCount - 1];
   const thrustAtTop = (d.enginePeakTorque * TORQUE_AT_TOP * topRatio) / t.radius;
-  const rollingAtTop = t.rollResist * weight;
   const v2 = d.topSpeed * d.topSpeed;
-  a.dragK = Math.max(0.004, ((thrustAtTop - rollingAtTop) / v2) * a.dragScale);
+  a.dragK = Math.max(0.002, ((thrustAtTop * a.dragFraction) / v2) * a.dragScale);
   a.lateralDragK = a.dragK * a.lateralDrag;
   a.downforceK = (a.downforce * weight) / v2;
-
-  // ── driven-wheel mask ───────────────────────────────────────────────
-  const fwd = d.drive === 'fwd' || d.drive === '4wd';
-  const rwd = d.drive === 'rwd' || d.drive === '4wd';
-  d.driven = [fwd, fwd, rwd, rwd];
-  d.driveSplit = d.drive === '4wd'
-    ? [d.torqueSplitFront * 0.5, d.torqueSplitFront * 0.5,
-      (1 - d.torqueSplitFront) * 0.5, (1 - d.torqueSplitFront) * 0.5]
-    : d.drive === 'fwd' ? [0.5, 0.5, 0, 0] : [0, 0, 0.5, 0.5];
-  d.drivenCount = d.driven.reduce((n, v) => n + (v ? 1 : 0), 0);
 
   /** Brake torque per wheel at full pedal. */
   d.brakeSplit = [
@@ -705,14 +736,48 @@ export function defineCar(raw) {
   return d;
 }
 
-/** Closed-form-ish estimate of the 0 → 95 % top-speed time, for the UI. */
+/**
+ * Integrate the real gear model to get the 0 → 95 %-of-top-speed time. Runs
+ * once per car at module load (8 × ~2000 iterations) and gives the UI an
+ * honest number instead of a hand-waved one.
+ *
+ * The point-mass integration cannot see three real losses — the tyre needs
+ * slip before it makes force, the engine speed lags the wheels, and the
+ * gearbox dips torque on every shift — so the result is scaled by
+ * `SIM_LOSS_FACTOR`, which was measured against the full simulation.
+ */
 function estimateZeroToTop(d) {
-  const vmax = d.topSpeed * 1.045;
-  const A = d.accel;
+  const r = d.tyre.radius;
   const target = d.topSpeed * 0.95;
-  const r = clamp01(1 - target / vmax);
-  if (r <= 1e-4) return 9.9;
-  return Math.min(9.9, (vmax / A) * -Math.log(r));
+  const h = 1 / 200;
+  let v = 0;
+  let t = 0;
+  let gear = 0;
+  let shiftT = 0;
+  for (let i = 0; i < 2400; i++) {
+    const vg = d.topSpeed * d.gearSpeeds[gear];
+    const frac = v / vg;
+    if (frac > d.shiftUpFrac && gear < d.gearCount - 1 && shiftT <= 0) {
+      gear++;
+      shiftT = d.shiftTime;
+    }
+    const ratio = d.gearRatios[gear];
+    const curve = engineTorqueFactor(Math.min(1.06, v / (d.topSpeed * d.gearSpeeds[gear])));
+    let torque = d.enginePeakTorque * curve;
+    if (shiftT > 0) { torque *= d.shiftTorqueDip; shiftT -= h; }
+    if (v >= d.topSpeed * (d.limiterRpm / d.redlineRpm)) torque = 0;
+    const thrust = (torque * ratio) / r;
+    const drag = d.aero.dragK * v * v + d.tyre.rollResist * d.weight;
+    const iRefl = d.tyre.inertia
+      + (d.drivenCount > 0 ? (d.engineInertia * ratio * ratio) / d.drivenCount : 0);
+    const mEff = d.mass
+      + (d.drivenCount * iRefl + (4 - d.drivenCount) * d.tyre.inertia) / (r * r);
+    v += ((thrust - drag) / mEff) * h;
+    t += h;
+    if (v >= target) return t * SIM_LOSS_FACTOR;
+    if (v < 0) return 9.9;
+  }
+  return 9.9;
 }
 
 /** @type {object[]} */

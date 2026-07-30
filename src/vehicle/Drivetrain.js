@@ -187,8 +187,10 @@ export class Drivetrain {
     const ratio2 = ratio * ratio;
     for (let i = 0; i < 4; i++) {
       const w = wheels[i];
+      // The driveline's inertia, reflected to the wheel side, is SHARED by the
+      // driven wheels — so it divides by their count, it does not multiply.
       this.reflected[i] = w.tire.inertia
-        + (w.isDriven ? this.engineInertia * ratio2 * Math.max(1, d.drivenCount) : 0);
+        + (w.isDriven ? (this.engineInertia * ratio2) / Math.max(1, d.drivenCount) : 0);
       if (!w.isDriven) continue;
       drivenOmegaSum += w.angularVelocity;
       drivenWeight++;
@@ -208,7 +210,7 @@ export class Drivetrain {
       targetOmega = lerp(this.idleOmega, this.redlineOmega * 0.74, clamp01(throttle));
     }
     // A little inertia so the needle does not teleport (audio cares).
-    const follow = clamp01(dt * (targetOmega > this.engineOmega ? 26 : 16));
+    const follow = clamp01(dt * (targetOmega > this.engineOmega ? 48 : 18));
     this.engineOmega += (targetOmega - this.engineOmega) * follow;
     this.engineOmega = clamp(this.engineOmega, this.idleOmega * 0.85, this.limiterOmega * 1.12);
     this.rpm = this.engineOmega * RAD_TO_RPM;
@@ -230,7 +232,7 @@ export class Drivetrain {
 
     // ── 5. rev limiter ─────────────────────────────────────────────────
     if (this.engineOmega >= this.limiterOmega) this.limiterActive = true;
-    else if (this.engineOmega < this.limiterOmega * 0.982) this.limiterActive = false;
+    else if (this.engineOmega < this.limiterOmega * 0.994) this.limiterActive = false;
     this.limiterPhase = this.limiterActive ? (this.limiterPhase + dt * 42) % 1 : 0;
 
     // ── 6. engine torque ───────────────────────────────────────────────
@@ -241,7 +243,7 @@ export class Drivetrain {
     // makes the cars chirp their tyres and feel like wound-up toys.
     if (this.gear === 1 && !launchLocked && this.driveInput > 0.5 && Math.abs(fwdSpeed) < 1.6) {
       this._launchTimer = Math.min(0.30, this._launchTimer + dt);
-      const punch = 1 + 0.85 * (1 - this._launchTimer / 0.30) * clamp01(1 - Math.abs(fwdSpeed) / 1.6);
+      const punch = 1 + 0.55 * (1 - this._launchTimer / 0.30) * clamp01(1 - Math.abs(fwdSpeed) / 1.6);
       eng *= punch;
       this.launchBoost = punch - 1;
     } else if (Math.abs(fwdSpeed) > 2.2 || this.driveInput < 0.2) {

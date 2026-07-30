@@ -72,7 +72,7 @@ export class Sparks {
 
     /** Per-car continuous scrape state. */
     this.scrapes = [];
-    for (let i = 0; i < CONFIG.race.maxCars; i++) {
+    for (let i = 0; i < Math.max(8, CONFIG.race.maxCars); i++) {
       this.scrapes.push({ acc: 0, heat: 0, cooldown: 0 });
     }
 
@@ -434,7 +434,10 @@ export class Sparks {
   update(dt) {
     if (dt <= 0) return;
     let active = 0;
-    for (const sl of this.lights) {
+    // Indexed loops on purpose: `for...of` allocates an iterator, and this runs
+    // every frame for the whole race.
+    for (let i = 0; i < this.lights.length; i++) {
+      const sl = this.lights[i];
       if (sl.ttl <= 0) continue;
       sl.ttl -= dt;
       if (sl.ttl <= 0) {
@@ -447,7 +450,8 @@ export class Sparks {
         active++;
       }
     }
-    for (const st of this.scrapes) {
+    for (let i = 0; i < this.scrapes.length; i++) {
+      const st = this.scrapes[i];
       if (st.heat > 0) st.heat = Math.max(0, st.heat - dt * 1.6);
     }
     this.stats.lights = active;

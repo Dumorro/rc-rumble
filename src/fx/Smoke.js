@@ -65,7 +65,7 @@ export class Smoke {
 
     /** @type {SmokeState[]} */
     this.states = [];
-    for (let i = 0; i < CONFIG.race.maxCars; i++) this.states.push(new SmokeState());
+    for (let i = 0; i < Math.max(8, CONFIG.race.maxCars); i++) this.states.push(new SmokeState());
 
     this.styles = {};
     this.stats = { spawned: 0, hottest: 0 };
@@ -293,8 +293,11 @@ export class Smoke {
     o.sizeMul = lerp(0.7, 1.45, st.heat);
     o.lifeMul = lerp(0.75, 1.3, st.heat);
 
-    // Emit from every slipping wheel, weighted by that wheel's own slip.
-    for (let w = 0; w < wheels.length && w < 4; w++) {
+    // Emit from every slipping wheel, weighted by that wheel's own slip. The
+    // running budget matters: without it four wheels could each take the full
+    // frame allowance and quadruple the intended rate.
+    let budget = n;
+    for (let w = 0; w < wheels.length && w < 4 && budget > 0; w++) {
       const wheel = wheels[w];
       if (!wheel || !wheel.contact || !wheel.contactPoint) continue;
       let t = clamp01(wheel.skidIntensity ?? 0);
@@ -306,7 +309,8 @@ export class Smoke {
       if (wheel.isSpinning) t = Math.max(t, 0.7);
       if (t < this.heatThreshold * 0.7) continue;
 
-      const share = Math.max(1, Math.round(n * t / Math.max(slip * 2.4, 0.6)));
+      const share = Math.min(budget, Math.max(1, Math.round(n * t / Math.max(slip * 2.4, 0.6))));
+      budget -= share;
       const cp = wheel.contactPoint;
       _n.copy(wheel.contactNormal ?? _n.set(0, 1, 0));
       if (_n.lengthSq() < 1e-6) _n.set(0, 1, 0);
@@ -366,7 +370,9 @@ export class Smoke {
     o.sizeMul = lerp(0.8, 1.5, intensity);
 
     // Backwards in world space, from the car's local -Z.
-    _v.setFromMatrixColumn(grp.matrixWorld, 2);       // +Z == rearward
+    // +Z is rearward. Normalize: a scaled car group would otherwise scale the
+    // exhaust velocity too.
+    _v.setFromMatrixColumn(grp.matrixWorld, 2).normalize();
     const bx = _v.x, by = _v.y, bz = _v.z;
 
     const soot = load > 0.62;

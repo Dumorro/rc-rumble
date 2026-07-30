@@ -109,6 +109,10 @@ export class RaceEntry {
     this.respawnCount = 0;
     this.lastCheckpointTime = 0;
     this.finalLapAnnounced = false;
+    /** Highest lap this car has ever reached — drives one-shot announcements. */
+    this.lapsAwarded = 0;
+    /** Short blackout after a gate so a car bouncing on the line cannot churn it. */
+    this._gateLock = 0;
 
     this.prevPos = new THREE.Vector3();
     this.hasPrev = false;
@@ -145,6 +149,8 @@ export class RaceEntry {
     this.respawnCount = 0;
     this.lastCheckpointTime = 0;
     this.finalLapAnnounced = false;
+    this.lapsAwarded = 0;
+    this._gateLock = 0;
     this.hasPrev = false;
     this.trace.reset();
   }
@@ -152,6 +158,14 @@ export class RaceEntry {
 
 /** How many awkward gates a car may miss per lap before it must go back. */
 const MAX_SKIPS = 1;
+
+/**
+ * Longest per-step motion that is still treated as *driving* rather than a
+ * teleport, metres. 0.5 m at 120 Hz is 60 m/s — cars top out around 9 m/s and
+ * even a bomb blast peaks near 10, so this only ever catches respawns and
+ * scripted moves, which must not be scored as gate crossings.
+ */
+const MAX_GATE_STEP = 0.5;
 
 export class RaceSystem {
   /** @param {import('../core/Game.js').Game} game */
@@ -205,7 +219,13 @@ export class RaceSystem {
     this.raceTimeLimit = 900;
     /** Freeze horizontal motion on the grid until GO. */
     this.holdGrid = true;
-    /** Auto-respawn a car that is upside down / wedged / off the world. */
+    /**
+     * Auto-respawn a car that is upside down / wedged / off the world.
+     * Switched OFF automatically when the vehicle layer ships its own respawn
+     * manager (`game.carSystem.respawn`), which owns the detection, the fade
+     * and the settle animation. Race rules then only *re-anchor progress* when
+     * a `car:respawn` lands.
+     */
     this.autoRespawn = true;
     this.upsideDownGrace = 2.4;
     this.stuckGrace = 3.2;
@@ -219,6 +239,9 @@ export class RaceSystem {
     this._lastBeep = 999;
     /** Largest believable per-step change in `u`; recomputed per race. */
     this._maxDu = 1;
+    /** The vehicle layer's respawn manager, when it has one. */
+    this._respawnMgr = null;
+    this._unsub = [];
     this._respawnScratch = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), checkpointIndex: 0 };
     this._hud = {
       phase: RacePhase.IDLE, countdown: 0, countdownN: 3, ready: false,
@@ -294,12 +317,19 @@ export class RaceSystem {
     }
 
     // A change in `u` larger than this in one step can only be a glitch or a
-    // teleport (40 m/s on this centreline), so it is discarded.
-    this._maxDu = this.nav.ready
-      ? Math.max(0.004, (40 * CONFIG.physics.fixedDt) / this.nav.length)
+    // teleport. Expressed in the same terms as MAX_GATE_STEP so the gate test
+    // and the progress test agree about what counts as "driving".
+    this._maxDu = this.nav.ready && this.nav.length > 0
+      ? Math.max(1e-4, MAX_GATE_STEP / this.nav.length)
       : 1;
     this.standings.update(0);
     this._assignPlaces(true);
+
+    // The vehicle layer owns respawn detection when it provides a manager;
+    // running our own on top would double-fire and fight its state machine.
+    const mgr = this.game?.carSystem?.respawn;
+    this._respawnMgr = (mgr && typeof mgr.request === 'function') ? mgr : null;
+    this._bindRespawn();
 
     this.phase = RacePhase.COUNTDOWN;
     this.countdown = (CONFIG.race.countdownSeconds ?? 3) + this.preRoll;
@@ -309,6 +339,8 @@ export class RaceSystem {
   }
 
   onRaceEnd() {
+    this._unbindRespawn();
+    this._respawnMgr = null;
     this.phase = RacePhase.IDLE;
     this.entries.length = 0;
     this.byId.clear();
@@ -360,9 +392,16 @@ export class RaceSystem {
         isFinish: !!c?.isFinish,
         /** Unit vector along the legal direction of travel. */
         forward: new THREE.Vector3(0, 0, -1).applyQuaternion(quat),
+        /** +1 when travel is along local -Z, -1 when the gate was flipped. */
+        sign: 1,
+        /** Cheap bounding radius for the early-out. */
+        reach: 0,
         u: 0,
         source: c,
       };
+      // A gate is a PLANE with a window, not a box: floor the vertical extent
+      // so a car cresting a jump through the gate still registers.
+      if (gate.half.y < 0.6) gate.half.y = 0.6;
       this.gates.push(gate);
     }
 
@@ -384,6 +423,7 @@ export class RaceSystem {
         g.u = hit.u;
         if (g.forward.dot(hit.tangent) < 0) {
           g.forward.negate();
+          g.sign = -1;
         }
         // Widen a gate that is clearly narrower than the road it sits on.
         const need = hit.halfWidth * 1.15;
@@ -394,6 +434,11 @@ export class RaceSystem {
       // No centreline: derive u from gate ordering so progress still advances.
       for (let i = 0; i < this.gates.length; i++) this.gates[i].u = i / this.gates.length;
       this.finishU = this.gates[this.finishGate].u;
+    }
+
+    for (let i = 0; i < this.gates.length; i++) {
+      const g = this.gates[i];
+      g.reach = Math.hypot(g.half.x, g.half.y) + MAX_GATE_STEP;
     }
 
     // A single-gate track is legal (each forward crossing = one lap).
@@ -430,6 +475,7 @@ export class RaceSystem {
       if (!car) continue;
 
       if (e._respawnCooldown > 0) e._respawnCooldown -= dt;
+      if (e._gateLock > 0) e._gateLock -= dt;
 
       if (!e.finished && !e.dnf) {
         e.totalTime += dt;
@@ -439,14 +485,14 @@ export class RaceSystem {
       this._trackPosition(e);
       if (!e.finished && !this.freeRoam) this._checkGates(e);
       this._checkWrongWay(e, dt);
-      if (this.autoRespawn) this._checkRecovery(e, dt);
+      if (this.autoRespawn && !this._respawnMgr) this._checkRecovery(e, dt);
 
       e.trace.sample(e.progress, this.raceTime);
       this._mirror(e);
     }
 
-    // Handle the player's reset request here too, so a respawn always works.
-    if (this.handleResetKey) this._pollResetKey();
+    // Only handle the reset key ourselves when nothing else will.
+    if (this.handleResetKey && !this._respawnMgr) this._pollResetKey();
 
     this.standings.update(this.raceTime);
     this._assignPlaces(false);
@@ -533,17 +579,19 @@ export class RaceSystem {
           e.uAccum += du;
           e._lastU = u;
           e._rejects = 0;
-        } else if (++e._rejects > 24) {
-          // Persistent disagreement (respawn we did not see, closest-point
-          // flip on a self-crossing track) — resync without crediting distance.
+        } else if (++e._rejects > 12) {
+          // Persistent disagreement — a teleport we were not told about, or a
+          // closest-point flip on a track that runs beside itself. Re-anchor to
+          // where the car actually is, keeping the *validated* lap count, so
+          // progress can never permanently desync from the world and can never
+          // be credited a lap it did not drive.
           e._lastU = u;
+          e.uAccum = e.lap + u;
           e._rejects = 0;
         }
         e.u = u;
       }
-      // A car may never be scored past the end of the lap it has validated.
-      // This is what makes gate-skipping worthless without punishing anyone.
-      e.progress = this.freeRoam ? e.uAccum : Math.min(e.uAccum, e.lap + 1 - 1e-4);
+      e.progress = this._score(e);
       e.offTrack = hit.distance > hit.halfWidth + this.offTrackMargin;
     } else {
       // No centreline: fall back to checkpoint-fraction progress.
@@ -554,7 +602,7 @@ export class RaceSystem {
         e.u = frac;
         e._lastU = frac;
         e.uAccum = e.lap + frac;
-        e.progress = e.uAccum;
+        e.progress = this._score(e);
         e.hasProgress = true;
       } else {
         e.progress = e.uAccum = e.lap;
@@ -563,17 +611,47 @@ export class RaceSystem {
     }
   }
 
+  /**
+   * Standings key for an entry.
+   *
+   * Clamped to the car's *validated* lap from BOTH sides:
+   *   • never past the end of the lap it has actually completed — a course cut
+   *     buys nothing,
+   *   • never behind the laps it has already banked — respawns re-anchor
+   *     `uAccum` to the car's real position, and without the floor a car that
+   *     had just been put back on the road could be scored below somebody a
+   *     whole lap behind it.
+   */
+  _score(e) {
+    if (this.freeRoam) return e.uAccum;
+    const lo = e.lap;
+    const hi = e.lap + 1 - 1e-4;
+    return e.uAccum < lo ? lo : e.uAccum > hi ? hi : e.uAccum;
+  }
+
   _checkWrongWay(e, dt) {
     const car = e.car;
     if (!car || e.finished || this.freeRoam || !this.nav.ready) {
       if (e.wrongWay) { e.wrongWay = false; this.bus?.emit('race:wrongway', { carId: e.id, active: false }); }
       return;
     }
-    carForward(car, _fwd);
-    const along = _fwd.dot(e.tangent);
-    const speed = Math.abs(car.speed ?? 0);
+    // Two independent tells, because both cases are "wrong way" to a player:
+    //   • the nose is pointing back down the track, or
+    //   • the car is genuinely travelling backwards at speed (reversing hard,
+    //     or sliding backwards after a spin).
+    // A slow shuffle to unstick yourself triggers neither.
+    const vel = car.body?.velocity ?? null;
+    const vlen = vel ? vel.length() : Math.abs(car.speed ?? 0);
     const threshold = Math.cos(CONFIG.race.wrongWayAngle ?? Math.PI * 0.6);
-    const bad = along < threshold && speed > 0.55;
+
+    let bad = false;
+    if (vlen > 0.55) {
+      carForward(car, _fwd);
+      bad = _fwd.dot(e.tangent) < threshold;
+    }
+    if (!bad && vel && vlen > 1.8) {
+      bad = (vel.dot(e.tangent) / vlen) < -0.30;
+    }
     if (bad) e._wrongTimer = Math.min(1.2, e._wrongTimer + dt);
     else e._wrongTimer = Math.max(0, e._wrongTimer - dt * 1.8);
 
@@ -593,7 +671,12 @@ export class RaceSystem {
     simPos(car, _pos);
     _prev.copy(e.prevPos);
     e.prevPos.copy(_pos);
-    if (_prev.distanceToSquared(_pos) < 1e-10) return;
+    const seg2 = _prev.distanceToSquared(_pos);
+    if (seg2 < 1e-10) return;
+    // A step longer than this can only be a teleport (60 m/s at 120 Hz — cars
+    // top out around 9). Scoring gates across a teleport invents laps, so skip
+    // the whole test for one step and pick up cleanly on the next.
+    if (seg2 > MAX_GATE_STEP * MAX_GATE_STEP) return;
 
     // 1. The gate we are supposed to take next.
     const next = e.nextCheckpoint;
@@ -613,30 +696,47 @@ export class RaceSystem {
     }
 
     // 3. Reversing back through the gate we just took rolls the lap state back.
-    if (e.checkpoint >= 0 && this._crossed(this.gates[e.checkpoint], _prev, _pos, -1)) {
+    //    The lock stops a car bouncing on the line churning lap/un-lap every
+    //    few frames in a first-corner pile-up.
+    if (e._gateLock <= 0 && e.checkpoint >= 0
+      && this._crossed(this.gates[e.checkpoint], _prev, _pos, -1)) {
       this._unpassGate(e, e.checkpoint);
     }
   }
 
   /**
-   * Did the segment prev→cur pass through the gate box in direction `dir`?
+   * Did the segment prev→cur cross the gate *plane* in direction `dir`,
+   * inside the gate's lateral/vertical window?
+   *
+   * A plane test, not a volume test: a volume test re-fires every step a car
+   * spends inside the box, which lets a car parked on the finish line wiggle
+   * itself extra laps. This fires exactly once per crossing, is direction
+   * exact, and cannot be tunnelled through at any speed.
+   *
    * Allocation free; works in the gate's local frame.
    */
   _crossed(gate, prev, cur, dir) {
     if (!gate) return false;
-    // Cheap radius reject first.
-    const r = gate.half.length() + prev.distanceTo(cur);
-    if (gate.position.distanceToSquared(cur) > r * r
-      && gate.position.distanceToSquared(prev) > r * r) return false;
-
-    // Direction of travel through the plane.
-    _v.copy(cur).sub(prev);
-    const along = _v.dot(gate.forward);
-    if (dir > 0 ? along <= 0 : along >= 0) return false;
+    // Cheap radius reject before the two quaternion transforms.
+    const rr = gate.reach * gate.reach;
+    if (gate.position.distanceToSquared(cur) > rr
+      && gate.position.distanceToSquared(prev) > rr) return false;
 
     _la.copy(prev).sub(gate.position).applyQuaternion(gate.invQuaternion);
     _lb.copy(cur).sub(gate.position).applyQuaternion(gate.invQuaternion);
-    return segmentHitsBox(_la, _lb, gate.half, _seg);
+
+    // `sign * localZ` decreases through zero when travelling along gate.forward.
+    const za = gate.sign * _la.z;
+    const zb = gate.sign * _lb.z;
+    if (dir > 0) { if (!(za > 0 && zb <= 0)) return false; }
+    else if (!(za < 0 && zb >= 0)) return false;
+
+    const span = za - zb;
+    const t = Math.abs(span) < 1e-12 ? 0 : za / span;
+    const x = _la.x + (_lb.x - _la.x) * t;
+    const y = _la.y + (_lb.y - _la.y) * t;
+    _seg.t = t;
+    return Math.abs(x) <= gate.half.x && Math.abs(y) <= gate.half.y;
   }
 
   _passGate(e, index, skipped) {
@@ -645,6 +745,7 @@ export class RaceSystem {
     e.skips += skipped;
     e.lastCheckpointTime = this.raceTime;
     e.nextCheckpoint = (index + 1) % n;
+    e._gateLock = 0.4;
     this.bus?.emit('race:checkpoint', { carId: e.id, index: this.gates[index].sourceIndex });
     if (this.gates[index].isFinish) this._completeLap(e);
     this._mirror(e);
@@ -661,26 +762,38 @@ export class RaceSystem {
         e.lastLap = e.lapTimes.length ? e.lapTimes[e.lapTimes.length - 1] : 0;
         e.bestLap = e.lapTimes.length ? Math.min(...e.lapTimes) : Infinity;
       }
-      e.finalLapAnnounced = false;
     }
     e.nextCheckpoint = index;
     e.checkpoint = (index - 1 + n) % n;
     e.skips = 0;
+    e._gateLock = 0.4;
   }
 
   _completeLap(e) {
     e.lap++;
     e.skips = 0;
+    // Release the "cannot be scored past your validated lap" clamp in the same
+    // step the lap is validated, so `progress` has no one-frame stall at the
+    // line (which would show up as a phantom position swap on the HUD).
+    e.progress = this._score(e);
     const lt = e.lapTime;
     e.lapTime = 0;
     e.lastLap = lt;
     e.lapTimes.push(lt);
     if (lt > 0 && lt < e.bestLap) e.bestLap = lt;
-    if (lt > 0 && lt < this.bestLapOverall.time) {
-      this.bestLapOverall = { carId: e.id, name: e.name, time: lt, lap: e.lap };
-      this.bus?.emit('race:lapRecord', { carId: e.id, lapTime: lt, lap: e.lap });
+
+    // Announce ONCE per lap actually gained. A car shunted back over the line
+    // in a pile-up un-counts and re-counts its lap; the HUD banner, the lap
+    // chime and the lap-record check must not fire again for the same lap.
+    const isNewLap = e.lap > e.lapsAwarded;
+    if (isNewLap) {
+      e.lapsAwarded = e.lap;
+      if (lt > 0 && lt < this.bestLapOverall.time) {
+        this.bestLapOverall = { carId: e.id, name: e.name, time: lt, lap: e.lap };
+        this.bus?.emit('race:lapRecord', { carId: e.id, lapTime: lt, lap: e.lap });
+      }
+      this.bus?.emit('race:lap', { carId: e.id, lap: e.lap, lapTime: lt, best: e.bestLap });
     }
-    this.bus?.emit('race:lap', { carId: e.id, lap: e.lap, lapTime: lt, best: e.bestLap });
 
     if (e.lap >= this.laps) {
       this._finishCar(e);
@@ -754,6 +867,47 @@ export class RaceSystem {
 
   // ── recovery / respawn ─────────────────────────────────────────────────
 
+  _bindRespawn() {
+    this._unbindRespawn();
+    if (!this.bus) return;
+    // Re-anchor progress whenever ANY system respawns a car — ours, the
+    // vehicle layer's, or a debug teleport. Without this a car put back on the
+    // road keeps a stale `u` until the drift guard resyncs it.
+    this._unsub.push(this.bus.on('car:respawn', (p) => this._onRespawned(p)));
+  }
+
+  _unbindRespawn() {
+    for (let i = 0; i < this._unsub.length; i++) this._unsub[i]();
+    this._unsub.length = 0;
+  }
+
+  _onRespawned(p) {
+    const e = this.byId.get(p?.carId);
+    if (!e) return;
+    if (e._reanchorGuard) return;   // our own requestRespawn already did it
+    this._reanchor(e);
+    this.game?.pickups?.effects?.reset?.(e.car);
+  }
+
+  /** Snap an entry's progress bookkeeping to where its car actually is. */
+  _reanchor(e) {
+    const car = e.car;
+    if (!car) return;
+    simPos(car, _v2);
+    e.hasPrev = false;
+    e.prevPos.copy(_v2);
+    e._stuckTimer = 0;
+    e._offTimer = 0;
+    if (!this.nav.ready) return;
+    const hit = this.nav.closest(_v2, -1);
+    e.rawU = hit.u;
+    e.u = wrap01(hit.u - this.finishU);
+    e._lastU = e.u;
+    e.uAccum = e.lap + e.u;
+    e.progress = this._score(e);
+    e._rejects = 0;
+  }
+
   _pollResetKey() {
     const player = this.game?.playerCar;
     if (!player) return;
@@ -795,14 +949,43 @@ export class RaceSystem {
   }
 
   /**
-   * Put a car back on the road at its last checkpoint. Safe to call from
-   * anywhere; absorbs duplicate calls within `CONFIG.race.respawnDelay`.
+   * Put a car back on the road at its last checkpoint.
+   *
+   * Delegates to the vehicle layer's respawn manager when there is one — it
+   * owns the fade, the settle animation, the invulnerability window and the
+   * `car:respawn` event, and we only re-anchor the race bookkeeping when that
+   * event lands. Without a manager we do the teleport ourselves so a respawn
+   * always works, even against a bare Car.
+   *
+   * Safe to call from anywhere; duplicate calls inside
+   * `CONFIG.race.respawnDelay` are absorbed.
+   *
    * @param {object} car
-   * @param {string} [reason]
+   * @param {string} [reason] 'manual' | 'stuck' | 'upsideDown' | 'offTrack' | 'fell'
+   * @returns {boolean} true when a respawn was started
    */
   requestRespawn(car, reason = 'manual') {
     const e = this.byId.get(car?.id);
     if (!e || e._respawnCooldown > 0) return false;
+
+    const cpIndex = e.checkpoint >= 0
+      ? (this.gates[e.checkpoint]?.sourceIndex ?? 0)
+      : 0;
+
+    // ── 1. the vehicle layer's respawn manager ──
+    if (this._respawnMgr) {
+      const started = this._respawnMgr.request(car, cpIndex, reason);
+      if (started) {
+        e._respawnCooldown = Math.max(0.4, CONFIG.race.respawnDelay ?? 0.65);
+        e.respawnCount++;
+        e._stuckTimer = 0;
+        e._offTimer = 0;
+      }
+      // It emits `car:respawn` when the teleport actually happens; _onRespawned
+      // re-anchors us then.
+      return started;
+    }
+
     e._respawnCooldown = Math.max(0.4, CONFIG.race.respawnDelay ?? 0.65);
     e.respawnCount++;
     e._stuckTimer = 0;
@@ -810,16 +993,17 @@ export class RaceSystem {
 
     const spot = this.getRespawn(e, this._respawnScratch);
 
-    // Prefer the car's own respawn (it knows about wheels, antenna, engine…).
+    // ── 2. the car's own respawn, if it has a useful one ──
     let handled = false;
-    if (typeof car.respawn === 'function') {
-      try {
-        car.respawn(spot.checkpointIndex, spot);
-        handled = true;
-      } catch (err) {
-        console.warn('[RaceSystem] car.respawn threw, falling back to teleport:', err);
-      }
+    if (typeof car.hardReset === 'function') {
+      try { car.hardReset(spot.position, spot.quaternion); handled = true; }
+      catch (err) { console.warn('[RaceSystem] car.hardReset threw:', err); }
+    } else if (typeof car.respawn === 'function') {
+      try { car.respawn(spot.checkpointIndex, spot); handled = true; }
+      catch (err) { console.warn('[RaceSystem] car.respawn threw:', err); }
     }
+
+    // ── 3. plain teleport ──
     if (!handled && car.body) {
       car.body.setTransform(spot.position, spot.quaternion, false);
       car.body.velocity.set(0, 0, 0);
@@ -830,24 +1014,16 @@ export class RaceSystem {
         car.group.position.copy(spot.position);
         car.group.quaternion.copy(spot.quaternion);
       }
-      this.bus?.emit('car:respawn', { carId: e.id, position: spot.position, reason });
-    } else if (handled) {
-      // The car did the work; still announce it for FX/audio/postfx.
-      this.bus?.emit('car:respawn', { carId: e.id, position: spot.position, reason });
     }
 
-    // Re-anchor progress so the teleport does not read as a lap.
-    e.hasPrev = false;
-    e.prevPos.copy(spot.position);
-    if (this.nav.ready) {
-      const hit = this.nav.closest(spot.position, -1);
-      e.rawU = hit.u;
-      e.u = wrap01(hit.u - this.finishU);
-      e._lastU = e.u;
-      e.uAccum = e.lap + e.u;
-      e.progress = this.freeRoam ? e.uAccum : Math.min(e.uAccum, e.lap + 1 - 1e-4);
-      e._rejects = 0;
-    }
+    // Re-anchor from where the car ACTUALLY ended up, then announce it. The
+    // guard stops _onRespawned doing the same work twice.
+    e._reanchorGuard = true;
+    this._reanchor(e);
+    simPos(car, _v2);
+    this.bus?.emit('car:respawn', { carId: e.id, position: _v2.clone(), reason });
+    e._reanchorGuard = false;
+
     this.game?.pickups?.effects?.reset?.(car);
     return true;
   }
@@ -955,6 +1131,9 @@ export class RaceSystem {
     this.bus?.emit('audio:music', { intent: player && player.place === 1 ? 'victory' : 'menu' });
     this.bus?.emit('camera:mode', { mode: 'podium' });
     this.game?.setState?.(GameState.RESULTS);
+    // fixedUpdate stops once we are in RESULTS, so refresh the HUD snapshot one
+    // last time or it freezes showing "finishing".
+    this._updateHud();
   }
 
   /** Force the race to end right now (menu quit, debug). */
@@ -1108,31 +1287,5 @@ export function carForward(car, out) {
   return out.set(0, 0, -1);
 }
 
-/**
- * Segment (a→b) vs origin-centred AABB with half extents `h`. Slab clipping,
- * allocation free. Writes the entry parameter into `out.t`.
- */
-function segmentHitsBox(a, b, h, out) {
-  let t0 = 0, t1 = 1;
-  for (let axis = 0; axis < 3; axis++) {
-    const ao = axis === 0 ? a.x : axis === 1 ? a.y : a.z;
-    const bo = axis === 0 ? b.x : axis === 1 ? b.y : b.z;
-    const ho = axis === 0 ? h.x : axis === 1 ? h.y : h.z;
-    const d = bo - ao;
-    if (Math.abs(d) < 1e-9) {
-      if (ao < -ho || ao > ho) return false;
-      continue;
-    }
-    let lo = (-ho - ao) / d;
-    let hi = (ho - ao) / d;
-    if (lo > hi) { const t = lo; lo = hi; hi = t; }
-    if (lo > t0) t0 = lo;
-    if (hi < t1) t1 = hi;
-    if (t0 > t1) return false;
-  }
-  out.t = t0;
-  return true;
-}
-
-export { formatTime, formatGap, ordinal, clamp, clamp01 };
+export { formatTime, formatGap, ordinal, clamp, clamp01, MAX_GATE_STEP };
 export default RaceSystem;

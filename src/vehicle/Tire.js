@@ -16,19 +16,24 @@
  *        where the curve peaks           → solves for B (numerically)
  *   `slideLong` / `slideLat`
  *        force in a full slide as a fraction of the peak
- *                                        → solves for C in closed form,
- *                                          because the asymptote of the magic
- *                                          formula is exactly D·sin(C·π/2)
+ *                                        → solves for C numerically so the
+ *                                          curve passes through that fraction
+ *                                          at the channel's REACHABLE full-slide
+ *                                          point: a locked wheel (|κ| = 1) and a
+ *                                          fully sideways tyre (α = 90°)
  *   `curveLong` / `curveLat`   (= E)
  *        how "flat-topped" the curve is between the linear region and the peak
  *   `grip`, `loadSensitivity`
  *        μ and how much of it you lose as vertical load rises
  *
  * That makes the two properties that actually decide game feel directly
- * dialable: `slideLat` ≈ 0.84 means a sliding tyre still returns 84 % of its
- * peak lateral force, which is *why* a Re-Volt slide is catchable. Longitudinal
- * `slideLong` ≈ 0.58 means a locked wheel loses 42 % of its stopping power, so
- * over-braking is punished.
+ * dialable, and — since the fit moved off the asymptote — the numbers now mean
+ * what they say. `slideLat` = 0.84 means a fully sideways tyre returns 84 % of
+ * its peak lateral force, which is *why* a Re-Volt slide is catchable; a
+ * partial drift keeps more (≈ 93 % at 24°, ≈ 88 % at 43°). `slideLong` = 0.58
+ * means a locked wheel returns 58 % of its peak stopping force, so over-braking
+ * is punished. Both were previously fitted at infinite slip, which no channel
+ * can reach, and so delivered ≈ 88 % and ≈ 70 % instead.
  *
  * Also modelled
  * -------------
@@ -48,6 +53,16 @@
 
 import { clamp, clamp01, lerp, smoothstep } from '../core/MathUtils.js';
 
+/**
+ * Full-slide reference points — where `slideLong` / `slideLat` are measured.
+ * Both are the real operating point the knob's name refers to, and both are
+ * reachable, which the old asymptotic fit was not. See shapeFromSlide.
+ */
+/** A fully locked wheel: kappa = (0 - vx)/|vx| = -1, so |kappa| = 1. */
+const LOCKED_SLIP_RATIO = 1.0;
+/** `atan2(vy, |vx| + eps)` bounds the slip angle at 90 deg — fully sideways. */
+const FULL_SLIDE_SLIP_ANGLE = Math.PI / 2;
+
 /** Speed floor used when normalising the slip ratio (m/s). */
 const SLIP_REF_SPEED = 0.72;
 /** Denominator floor for the slip angle (m/s) — keeps atan2 sane at rest. */
@@ -65,14 +80,52 @@ const SKID_FULL = 2.30;
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * C from the desired slide/peak force ratio.
- * The magic formula's asymptote is D·sin(C·π/2); taking the branch with C > 1
- * (the branch that actually has a peak) gives C = 2 − (2/π)·asin(f).
- * @param {number} slideFraction 0.2 … 0.98
+ * C from the desired slide/peak force ratio, measured AT A REACHABLE SLIP.
+ *
+ * The obvious fit is the closed form C = 2 − (2/π)·asin(f), which makes the
+ * curve's ASYMPTOTE equal f. That was wrong in a way that is easy to miss: the
+ * asymptote is the force at infinite slip, and neither channel can get there.
+ * Slip angle is `atan2(vy, |vx| + 0.34)`, so it is bounded by 90°; slip ratio
+ * for a locked wheel is exactly −1. Authoring `slideLat = 0.84` and believing a
+ * sliding tyre returned 84% of peak actually produced 88% fully sideways and
+ * 95% in a 24° drift — the knob was calibrated in units the model never reached.
+ *
+ * So fit at the operating point the name refers to instead: solve numerically
+ * for the C whose curve passes through `f` at `refSlip`. Retention is just
+ * `shape(refSlip)` because the magic formula peaks at exactly 1 by construction
+ * (at the peak C·atan(g) = π/2, so sin(...) = 1).
+ *
+ * Rejected alternative: fitting at a fixed multiple of the peak slip (3× was
+ * proposed). It is unreachable for the longitudinal channel — no C in the
+ * peak-bearing range gets down to 58% that early, so the solve silently clamps
+ * at its bound and misses the target by 8 points — and laterally it drags the
+ * asymptote down to 50% (27% on `needle`), which makes a fully sideways car
+ * much looser rather than more catchable.
+ *
+ * @param {number} slideFraction 0.2 … 0.98, force at `refSlip` ÷ peak force
+ * @param {number} E curvature, must match the curve this C is for
+ * @param {number} peakAt slip at which the curve peaks
+ * @param {number} refSlip slip at which `slideFraction` is measured
  */
-export function shapeFromSlide(slideFraction) {
+export function shapeFromSlide(slideFraction, E = 0, peakAt = 1, refSlip = Infinity) {
   const f = clamp(slideFraction, 0.18, 0.985);
-  return 2 - (2 / Math.PI) * Math.asin(f);
+  const e = clamp(E, -1.5, 0.92);
+  // Legacy/no-reference behaviour: fit the asymptote in closed form.
+  if (!Number.isFinite(refSlip)) return 2 - (2 / Math.PI) * Math.asin(f);
+
+  const retentionAt = (C) => {
+    const bx = (magicPeakArg(C, e) / Math.max(1e-6, peakAt)) * refSlip;
+    return Math.sin(C * Math.atan(bx - e * (bx - Math.atan(bx))));
+  };
+  // Retention falls monotonically with C over the peak-bearing range (1, 2).
+  let lo = 1.0005, hi = 1.999;
+  if (retentionAt(lo) <= f) return lo;
+  if (retentionAt(hi) >= f) return hi;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) * 0.5;
+    if (retentionAt(mid) > f) lo = mid; else hi = mid;
+  }
+  return (lo + hi) * 0.5;
 }
 
 /**
@@ -101,17 +154,24 @@ export function magicPeakArg(C, E) {
 export class MagicCurve {
   /**
    * @param {number} peakAt slip (ratio, or radians) at which the peak occurs
-   * @param {number} slideFraction force in a full slide ÷ peak force
+   * @param {number} slideFraction force at `refSlip` ÷ peak force
    * @param {number} E curvature (0 = classic, higher = flatter top)
+   * @param {number} refSlip the slip `slideFraction` is measured at — the
+   *        channel's full-slide operating point, not infinity
    */
-  constructor(peakAt, slideFraction, E) {
-    this.C = shapeFromSlide(slideFraction);
+  constructor(peakAt, slideFraction, E, refSlip = Infinity) {
+    // E first: the C solve depends on it.
     this.E = clamp(E, -1.5, 0.92);
     this.peakAt = Math.max(1e-4, peakAt);
+    this.refSlip = refSlip;
+    this.C = shapeFromSlide(slideFraction, this.E, this.peakAt, refSlip);
     this.B = magicPeakArg(this.C, this.E) / this.peakAt;
     /** dF/dslip at zero slip, per newton of peak force D. */
     this.stiffnessPerD = this.B * this.C;
-    this.slideFraction = Math.sin((this.C * Math.PI) / 2);
+    /** Realised retention at `refSlip` — should equal the authored value. */
+    this.slideFraction = Number.isFinite(refSlip) ? this.shape(refSlip) : Math.sin((this.C * Math.PI) / 2);
+    /** Force retained at infinite slip. Informational; not the authored knob. */
+    this.asymptote = Math.sin((this.C * Math.PI) / 2);
   }
 
   /** F/D for a signed slip value. Odd function, range ≈ [−1, 1]. */
@@ -154,8 +214,8 @@ export class Tire {
       ? def.axleLoadFront * 0.5
       : def.axleLoadRear * 0.5);
 
-    this.longCurve = new MagicCurve(t.peakSlipRatio, t.slideLong, t.curveLong);
-    this.latCurve = new MagicCurve(t.peakSlipAngle, t.slideLat, t.curveLat);
+    this.longCurve = new MagicCurve(t.peakSlipRatio, t.slideLong, t.curveLong, LOCKED_SLIP_RATIO);
+    this.latCurve = new MagicCurve(t.peakSlipAngle, t.slideLat, t.curveLat, FULL_SLIDE_SLIP_ANGLE);
 
     // ── state ─────────────────────────────────────────────────────────
     /** Relaxed (lagged) slip states — the values FX and audio should read. */

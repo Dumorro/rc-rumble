@@ -102,7 +102,11 @@ export class AeroBody {
    * @param {number} throttle 0..1
    * @param {number} brake 0..1
    */
-  update(dt, steer, throttle, brake) {
+  /**
+   * @param {number} [dfScale] `car.effectMods.downforce` — 1 = normal. Scales
+   *        aero downforce only; drag is a property of the shape, not a buff.
+   */
+  update(dt, steer, throttle, brake, dfScale = 1) {
     const car = this.car;
     const body = car.body;
     if (!body) return;
@@ -133,16 +137,25 @@ export class AeroBody {
     // ── downforce ──────────────────────────────────────────────────────
     const onGround = car.wheelsOnGround > 0;
     if (speed > 0.45 && this.downforceK > 0) {
-      let df = this.downforceK * speed * speed;
+      let df = this.downforceK * speed * speed * dfScale;
       if (onGround) {
         df *= 1 + this.groundEffect * clamp01(car.suspension.squat() * 1.25);
       } else {
-        df *= 0.45;
+        // Airborne, wings stalled and no ground effect. Keep this small: a
+        // high-downforce car doing 10 m/s can otherwise generate more than its
+        // own weight mid-jump, which flattens the arc and — because the wing
+        // sits behind the COM — pitches the nose skyward at 30 rad/s².
+        df *= 0.22;
       }
       this.downforce = df;
       _force.copy(_up).multiplyScalar(-df);
-      _point.set(0, 0, this.downforceZ).applyQuaternion(body.quaternion).add(body.position);
-      body.applyForce(_force, _point);
+      if (onGround) {
+        _point.set(0, 0, this.downforceZ).applyQuaternion(body.quaternion).add(body.position);
+        body.applyForce(_force, _point);
+      } else {
+        // No moment arm in the air — the attitude belongs to the player.
+        body.applyForce(_force);
+      }
     } else {
       this.downforce = 0;
     }

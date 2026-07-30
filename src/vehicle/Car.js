@@ -55,6 +55,14 @@ const _vLocal = new THREE.Vector3();
 const _accel = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 
+/**
+ * Handling multipliers when the gameplay layer is absent (a car spawned outside
+ * a race, or gameplay disabled). Same shape as `car.effectMods`, all neutral.
+ */
+const NEUTRAL_MODS = Object.freeze({
+  grip: 1, torque: 1, steer: 1, brake: 1, maxSpeed: 1, downforce: 1, antiRoll: 1,
+});
+
 /** Wheels must be off the ground this long before we call it "airborne". */
 const AIR_GRACE = 0.075;
 /** Free-spinning wheel bearing drag (N·m per rad/s) while off the ground. */
@@ -67,20 +75,20 @@ const VIS_PITCH_MAX = 0.130;
 export const SURFACE_ROLL = new Float32Array([
   1.00, // 0  default
   1.00, // 1  wood
-  2.30, // 2  carpet
+  3.00, // 2  carpet
   0.92, // 3  tile
-  1.15, // 4  concrete
-  2.05, // 5  grass
-  1.85, // 6  dirt
-  2.40, // 7  gravel
-  3.10, // 8  sand
-  2.60, // 9  water_shallow
+  1.20, // 4  concrete
+  3.40, // 5  grass
+  3.00, // 6  dirt
+  3.80, // 7  gravel
+  5.20, // 8  sand
+  4.50, // 9  water_shallow
   0.55, // 10 ice
   0.95, // 11 metal
   1.00, // 12 plastic
-  1.35, // 13 rubber
+  1.45, // 13 rubber
   0.90, // 14 glass
-  0.45, // 15 oil_slick
+  0.40, // 15 oil_slick
 ]);
 
 let _nextCarId = 0;
@@ -223,13 +231,26 @@ export class Car {
       linearDamping: 0.008,
       angularDamping: 0.10,
       allowSleep: false,
-      ccd: false,
+      // Continuous collision. NOT optional at this scale: the chassis is only
+      // 48-92 mm thick depending on the car, and a fall reaches 16 m/s (133 mm
+      // per 120 Hz step) after 6.5 m at our 2g gravity — well within a museum
+      // shelf drop. Measured with ccd:false, a chassis hull dropped onto a thin
+      // platform passes clean through it from 16 m/s up, and through a thin
+      // wall from 20 m/s; with ccd:true both hold to 32 m/s. The engine only
+      // sweeps when the step motion exceeds 0.75*0.6*boundingRadius (~9.8 m/s
+      // for these hulls), so this costs one sphere-cast per car per step and
+      // only while genuinely fast.
+      ccd: true,
       userData: this,
       name: `car:${def.id}:${this.id}`,
     });
     this.body.setInertiaLocal(def.inertia[0], def.inertia[1], def.inertia[2]);
-    this.body.maxAngularSpeed = 26;
-    this.body.maxLinearSpeed = 40;
+    // Safety nets, not gameplay limits. A car in a bad contact sandwich can be
+    // launched by the solver; these keep such a moment merely funny instead of
+    // sending the camera to orbit. Both sit far above anything driving or a big
+    // jump can reach (terminal velocity off a 5 m drop at 2 g is ~14 m/s).
+    this.body.maxAngularSpeed = 18;
+    this.body.maxLinearSpeed = clamp(def.topSpeed * 2.8, 18, 34);
 
     // ── visual root ───────────────────────────────────────────────────
     this.group = new THREE.Group();
@@ -409,18 +430,27 @@ export class Car {
     const c = this.control;
     const live = this.controlEnabled;
     const electro = e.electro > 0;
-    const frozen = e.frozen > 0;
+    // `car.effectMods` is the SINGLE channel through which gameplay modulates
+    // handling: grip, torque, steer, brake, maxSpeed, downforce, antiRoll, all
+    // 1 = normal. Nothing in here reads `car.effects.*` for handling any more —
+    // that was a second, parallel mechanism that covered two of the seven
+    // channels and left the other five inert. Missing (no gameplay layer) is
+    // treated as all-neutral.
+    const mods = this.effectMods ?? NEUTRAL_MODS;
     let throttle = live ? c.throttle : 0;
-    let brake = live ? c.brake : 0;
+    const brake = live ? c.brake : 0;
     let steer = live ? c.steer : 0;
     const handbrake = live ? c.handbrake : 0;
     if (electro) {
-      // Shocked: throttle cut and the steering fights you.
+      // Shocked: the steering fights you. Not a multiplier, so it cannot live
+      // in effectMods — the torque kill itself comes from mods.torque = 0.
       throttle = 0;
       this._electroPhase = (this._electroPhase ?? 0) + dt * 37;
       steer = -steer * 0.85 + Math.sin(this._electroPhase) * 0.35;
     }
-    if (frozen) steer *= 0.30;
+    steer *= mods.steer;
+    // Telemetry reports the PEDAL, not the modulated demand — the HUD and the
+    // audio engine want to know what the driver asked for.
     this.throttle = throttle;
     this.brake = brake;
     this.steer = steer;
@@ -430,12 +460,24 @@ export class Car {
     this._updateSteering(dt, steer);
 
     // ── 3. surface lookup + suspension ─────────────────────────────────
-    this.suspension.update(dt);
+    this.suspension.update(dt, mods.antiRoll);
     this._resolveSurfaces();
 
     // ── 4. drivetrain ──────────────────────────────────────────────────
-    const torqueScale = (e.boost > 0 ? 1.85 : 1) * (frozen ? 0.35 : 1);
-    this.drivetrain.update(dt, throttle, brake, handbrake, this.launchLocked, torqueScale);
+    // Speed governor. A DEBUFF must genuinely cap you (you cannot out-drag a
+    // squash downhill); a buff does not need a governor because the extra speed
+    // already falls out of mods.torque against aero drag — v scales as
+    // sqrt(thrust), so boost's 1.85x torque lands at 1.36x speed on its own,
+    // near enough its 1.42x maxSpeed intent. Governing upward too would just
+    // fight the drag balance.
+    let torqueScale = mods.torque;
+    if (mods.maxSpeed < 1) {
+      const cap = this.def.topSpeed * mods.maxSpeed;
+      const over = (Math.abs(this.speed) - cap) / Math.max(0.25, cap * 0.08);
+      if (over > 0) torqueScale *= 1 - clamp01(over);
+    }
+    this.drivetrain.update(dt, throttle, brake * mods.brake, handbrake,
+      this.launchLocked, torqueScale);
     this.rpm = this.drivetrain.rpm;
     this.gear = this.drivetrain.gear;
     this.engineLoad = this.drivetrain.engineLoad;
@@ -449,7 +491,7 @@ export class Car {
     let traction = 0;
     let bestLoad = -1;
     let bestSurface = this.dominantSurfaceId;
-    const gripMul = (e.oiled > 0 ? 0.30 : 1) * (frozen ? 0.55 : 1);
+    const gripMul = mods.grip;
 
     for (let i = 0; i < 4; i++) {
       const w = this.wheels[i];
@@ -543,7 +585,7 @@ export class Car {
 
     // ── 6. aero + assists ──────────────────────────────────────────────
     this._updateAirState(dt);
-    this.aero.update(dt, steer, throttle, brake);
+    this.aero.update(dt, steer, throttle, brake, mods.downforce);
     this.aero.applyCounterSteerAssist(steer, this.slipAngle);
 
     // ── 7. telemetry ───────────────────────────────────────────────────
@@ -575,12 +617,41 @@ export class Car {
   }
 
   /** Fill per-wheel grip / rolling multipliers from the surface tables. */
+  /**
+   * Resolve each wheel's grip / rolling multiplier from its surface id.
+   *
+   * Hazard surfaces (an oil slick, surface id 15, grip 0.10) are published
+   * OUT OF BAND by the pickup system rather than through the collision mesh,
+   * because `physics.addStaticGeometry` is append-only and a slick has to
+   * expire. So they have to be folded in here — otherwise driving over oil only
+   * spins you out through the `oiled` status effect and the tyres themselves
+   * never lose grip, which is the whole "oh no, oil" moment.
+   *
+   * Resolved PER WHEEL at the actual contact point, not per car: clipping the
+   * edge of a slick with two wheels should not feel like hitting it square, and
+   * the asymmetry is what makes it read as a slick rather than a debuff. Costs
+   * four point tests per car per step and only when a hazard is live.
+   */
   _resolveSurfaces() {
     const grip = this.gripTable;
     const roll = this.rollTable;
+    const pickups = this.game?.pickups;
+    const probe = pickups?.hazardSurfaceAt ? pickups : null;
+    // Per-car mirror, maintained by the pickup system. Zero when no slick is
+    // anywhere near this car, which lets us skip the per-wheel probe entirely.
+    const carHazard = this.hazardSurfaceId | 0;
+
     for (let i = 0; i < 4; i++) {
       const w = this.wheels[i];
-      const sid = w.surfaceId & 0x0f;
+      let sid = w.surfaceId & 0x0f;
+      if (carHazard) {
+        const p = w.contactPoint;
+        const h = (probe && w.contact)
+          ? probe.hazardSurfaceAt(p.x, p.y, p.z)
+          : carHazard;
+        if (h) sid = h & 0x0f;
+      }
+      w.surfaceId = sid;
       w.surfaceGrip = grip[sid] ?? 1;
       w.surfaceRoll = roll[sid] ?? 1;
     }
@@ -658,7 +729,11 @@ export class Car {
     // Drift: chassis slip angle, reinforced by rear-tyre skid and the handbrake.
     const bySlip = clamp01((Math.abs(this.slipAngle) - 0.075) / 0.42) * clamp01(Math.abs(this.speed) / 1.9);
     const bySkid = this.rearSkid * 0.9;
-    const target = Math.max(bySlip, bySkid * (this.wheelsOnGround > 0 ? 1 : 0));
+    // A four-wheel slide barely shows up as a chassis slip angle, but it is
+    // very much a drift as far as the tyre marks and the audio are concerned.
+    const byScrub = this.skid * 0.55;
+    const grounded = this.wheelsOnGround > 0 ? 1 : 0;
+    const target = Math.max(bySlip, Math.max(bySkid, byScrub) * grounded);
     this.driftFactor = damp(this.driftFactor, clamp01(target), 14, dt);
 
     // Attitude / stuck / off-track bookkeeping (the respawn manager reads these).
@@ -696,8 +771,8 @@ export class Car {
       const pitchBias = susp.pitchBias();
       const squat = susp.squat();
       const staticSquat = (d.susp.staticCompFront + d.susp.staticCompRear) * 0.5 / Math.max(1e-4, d.susp.travel);
-      const targetRoll = clamp(-rollBias * d.visualRollGain * 0.55, -VIS_ROLL_MAX, VIS_ROLL_MAX);
-      const targetPitch = clamp(-pitchBias * d.visualPitchGain * 0.5, -VIS_PITCH_MAX, VIS_PITCH_MAX);
+      const targetRoll = clamp(-rollBias * d.visualRollGain * 0.95, -VIS_ROLL_MAX, VIS_ROLL_MAX);
+      const targetPitch = clamp(-pitchBias * d.visualPitchGain * 0.85, -VIS_PITCH_MAX, VIS_PITCH_MAX);
       const targetY = -(squat - staticSquat) * d.susp.travel * d.visualSquatGain;
       const k = clamp01(dt * 18);
       this.shell.rotation.z += (targetRoll - this.shell.rotation.z) * k;

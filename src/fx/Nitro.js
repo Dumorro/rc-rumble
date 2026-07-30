@@ -35,9 +35,6 @@ const _right = new THREE.Vector3();
 const _camFwd = new THREE.Vector3();
 const _camPos = new THREE.Vector3();
 
-/** Fallback nozzles for a car that has not declared any (chassis-local metres). */
-const DEFAULT_NOZZLES = [[-0.045, 0.030, 0.125], [0.045, 0.030, 0.125]];
-
 class BoostState {
   constructor() {
     /** 0..1, smoothed: the flame has inertia, it does not blink on. */
@@ -67,7 +64,7 @@ export class Nitro {
 
     /** @type {BoostState[]} */
     this.states = [];
-    for (let i = 0; i < CONFIG.race.maxCars; i++) this.states.push(new BoostState());
+    for (let i = 0; i < Math.max(8, CONFIG.race.maxCars); i++) this.states.push(new BoostState());
 
     this._lineAcc = 0;
     this.styles = {};

@@ -23,6 +23,15 @@ const _up = new THREE.Vector3();
 const _v = new THREE.Vector3();
 const _n = new THREE.Vector3();
 
+/**
+ * The id reported on `weapon:hit`. The *slot* id stays 'balloon' (correct name
+ * in the HUD, correct launch sound in the audio weapon-alias table), but the
+ * FX weapon table keys its splash off 'water' — without this the burst would
+ * fall through to the default orange fireball, which for a water balloon looks
+ * plainly broken.
+ */
+const HIT_ID = 'water';
+
 export const WaterBalloon = {
   id: 'balloon',
   name: 'Water Balloon',
@@ -201,7 +210,7 @@ function burst(e, game, point, normal, directCar) {
       effect: 'blinded',
       effectTime: WaterBalloon.directBlindTime,
       sourceId: e.ownerId,
-      weaponId: 'balloon',
+      weaponId: HIT_ID,
       worldPoint: point,
       shake: 0.55,
     });
@@ -220,7 +229,7 @@ function burst(e, game, point, normal, directCar) {
     effect: 'blinded',
     effectTime: WaterBalloon.blindTime,
     sourceId: e.ownerId,
-    weaponId: 'balloon',
+    weaponId: HIT_ID,
     skipCarId: e.age < 0.6 ? e.ownerId : -1,
     skipIds: skip,
     propDeltaV: 1.6,

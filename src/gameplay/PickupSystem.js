@@ -115,6 +115,8 @@ export class PickupSystem {
 
     /** @type {Map<number, Slot>} carId → slot */
     this.slots = new Map();
+    /** Same slots as a plain array — iterated at 120 Hz, so no Map iterator. */
+    this._slotList = [];
 
     // ── tuning ──────────────────────────────────────────────────────────
     /** Seconds the slot machine spins before it settles. */
@@ -138,6 +140,8 @@ export class PickupSystem {
 
     this._prevFire = false;
     this._repeatT = 0;
+    /** True once a Car with `consumeFire()` has been seen this race. */
+    this._hasFireBridge = false;
     this._rng = game?.rng ?? null;
     this._candScratch = [];
     this._ctx = {
@@ -166,11 +170,13 @@ export class PickupSystem {
     this.pads.onRaceStart(ctx);
 
     this.slots.clear();
+    this._slotList.length = 0;
     const cars = ctx?.cars ?? this.game?.cars ?? [];
     for (let i = 0; i < cars.length; i++) {
       const car = cars[i];
       const s = new Slot(car);
       this.slots.set(car.id, s);
+      this._slotList.push(s);
       car.weapon = null;
       car.hasBomb = false;
       car.bombFuse = 0;
@@ -193,6 +199,7 @@ export class PickupSystem {
       }
     }
     this.slots.clear();
+    this._slotList.length = 0;
     this.pads.onRaceEnd();
     this.projectiles.onRaceEnd();
     this.effects.onRaceEnd();
@@ -215,12 +222,12 @@ export class PickupSystem {
     // 2. Pads: collection + respawn cooldowns.
     this.pads.fixedUpdate(dt);
 
-    // 3. Slots: rolls, player firing, AI firing.
+    // 3. Slots: rolls, fire requests, AI fallback firing.
     const live = this.game?.controlsLive ?? false;
+    this._pollFireRequests(live);
     this._stepPlayer(dt, live);
-    for (const s of this.slots.values()) {
-      this._stepSlot(s, dt, live);
-    }
+    const list = this._slotList;
+    for (let i = 0; i < list.length; i++) this._stepSlot(list[i], dt, live);
 
     // 4. Publish hazard surfaces (oil slicks) onto the cars.
     this._publishHazards();
@@ -259,7 +266,9 @@ export class PickupSystem {
     }
 
     if (!s.weapon || !live) return;
-    if (this.autoFireEnabled && s.autoFire && !s.car?.isPlayer) this._stepAI(s, dt);
+    if (this.autoFireEnabled && s.autoFire && !s.car?.isPlayer && !s.car?.aiDriver) {
+      this._stepAI(s, dt);
+    }
   }
 
   _settle(s) {
@@ -276,8 +285,9 @@ export class PickupSystem {
     s.lastId = weapon.id;
     this._writeSlot(s, weapon.id, uses, 1, true, false);
 
-    // Give the AI a beat before it uses it.
-    const skill = clamp(s.car?.aiSkill ?? 0.8, 0.2, 1.2);
+    // Give the AI a beat before it uses it. `aiDriver.skill` is the real
+    // source; `car.aiSkill` is an optional override, 0.8 if neither exists.
+    const skill = clamp(s.car?.aiDriver?.skill ?? s.car?.aiSkill ?? 0.8, 0.2, 1.2);
     const r = this._rand();
     s.aiTimer = this.aiThinkMin + (this.aiThinkMax - this.aiThinkMin) * r * (1.4 - skill * 0.5);
     s.aiHold = 0;
@@ -496,6 +506,19 @@ export class PickupSystem {
   get weaponIds() { return WEAPON_IDS; }
   get weaponList() { return WEAPON_LIST; }
 
+  /**
+   * Browser self-test: builds every procedural mesh, exercises the FX pools and
+   * dry-fires every weapon against the live game.
+   * Lazily imported, so it costs nothing in the shipped bundle.
+   *
+   *   await GAME.pickups.selfTest()
+   *   await GAME.pickups.selfTest({ visual: true })
+   */
+  async selfTest(opts) {
+    const m = await import('./__selftest__.js');
+    return m.run(this.game, opts);
+  }
+
   /** Live counts for the debug overlay. */
   stats() {
     return {
@@ -509,7 +532,10 @@ export class PickupSystem {
 
   _armedCount() {
     let n = 0;
-    for (const s of this.slots.values()) if (s.weapon && s.ready) n++;
+    for (let i = 0; i < this._slotList.length; i++) {
+      const s = this._slotList[i];
+      if (s.weapon && s.ready) n++;
+    }
     return n;
   }
 
@@ -594,11 +620,44 @@ export class PickupSystem {
     return ctx;
   }
 
+  // ── fire requests ──────────────────────────────────────────────────────
+
+  /**
+   * The vehicle layer's canonical bridge: `Car.consumeFire()` is an
+   * edge-triggered flag set by BOTH the player input (`applyControl`) and the
+   * AI driver (`requestFire`). Polling it once per step is what the Car API
+   * asks us to do, and it means the player and the AI go down exactly the same
+   * firing path.
+   */
+  _pollFireRequests(live) {
+    const cars = this.game?.cars;
+    if (!cars || !live) return;
+    for (let i = 0; i < cars.length; i++) {
+      const car = cars[i];
+      if (!car || typeof car.consumeFire !== 'function') continue;
+      const s = this.slots.get(car.id);
+      if (s) {
+        // A car whose controls carry fire requests drives itself — stand down
+        // the built-in AI fallback for it.
+        this._hasFireBridge = true;
+        if (car.aiDriver) s.autoFire = false;
+      }
+      if (!car.consumeFire()) continue;
+      const c = car.control;
+      const backwards = !!(c?.lookBack || (c?.brake ?? 0) > 0.55);
+      this.tryFire(car, { backwards });
+    }
+  }
+
   // ── player input ───────────────────────────────────────────────────────
 
   _stepPlayer(dt, live) {
     const car = this.game?.playerCar;
     if (!car || !live) { this._prevFire = false; return; }
+    // When the Car exposes consumeFire() the bridge above already handled the
+    // press (and did the edge detection properly); only the auto-repeat for
+    // multi-use items is left to us.
+    if (typeof car.consumeFire === 'function') { this._stepRepeat(car, dt); return; }
     const input = this.game?.input?.state;
     if (!input) return;
 
@@ -618,6 +677,18 @@ export class PickupSystem {
     } else {
       this._repeatT = 0;
     }
+  }
+
+  /** Auto-repeat while the fire button stays held on a multi-use item. */
+  _stepRepeat(car, dt) {
+    const c = car.control;
+    const held = !!c?.fire;
+    if (!held) { this._repeatT = 0; return; }
+    this._repeatT -= dt;
+    if (this._repeatT > 0) return;
+    this._repeatT = this.repeatDelay;
+    const backwards = !!(c.lookBack || (c.brake ?? 0) > 0.55);
+    this.tryFire(car, { backwards });
   }
 
   _firePlayer(car, input) {

@@ -682,6 +682,7 @@ export class Burst {
 
   fire(pos, radius = 1.0, duration = 0.55, normal = null) {
     this.group.position.copy(pos);
+    this.group.rotation.set(0, 0, 0);   // pooled: clear the spin from last time
     this.radius = radius;
     this.duration = duration;
     this.life = duration;

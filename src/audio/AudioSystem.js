@@ -39,7 +39,7 @@ import {
 } from './DSP.js';
 import { VoicePool } from './VoicePool.js';
 import { Listener } from './Listener.js';
-import { Reverb, resolveReverbName } from './Reverb.js';
+import { Reverb, resolveReverbName, reverbDescFromParams } from './Reverb.js';
 import { SFXSynth, RECIPES, AMBIENCE, resolveAmbience, landRecipe, weaponFamily } from './SFXSynth.js';
 import { EngineSynth } from './EngineSynth.js';
 import { TireAudio } from './TireAudio.js';
@@ -93,12 +93,14 @@ export class AudioSystem {
 
     this._carsRef = null;
     this._carCount = -1;
-    this._syncTimer = 0;
+    this._frame = 0;
     this._applied = { master: -1, music: -1, sfx: -1, engine: -1 };
     this._volSfx = clamp(fin(CONFIG.audio.sfxVolume, 0.9), 0, 2);
     this._volEngine = clamp(fin(CONFIG.audio.engineVolume, 0.7), 0, 2);
     this._duck = 1;
     this._duckTarget = 1;
+    this._lastSfxG = -1;
+    this._lastEngG = -1;
     this._unsub = [];
     this._gestureHandler = null;
     this._keyHandler = null;
@@ -287,16 +289,39 @@ export class AudioSystem {
     const track = ctx?.track ?? this.game.track;
     this.listener?.resetMotion();
 
-    // ── room + ambience from TrackData.audio / environment / id ──
+    // ── room + ambience from TrackData.audio / environment / id ────────────
+    //
+    // `TrackData.audio.reverb` comes in two flavours in practice and both are
+    // supported:
+    //   · a NAME  — 'museum' | 'garden' | … | { preset: 'museum' }
+    //   · PARAMS  — { roomSize, damping, wet, preDelay }   ← what TrackBuilder emits
+    // For params we pick the character preset from the best available hint
+    // (explicit name → ambienceId → skybox → track id) and let the track's
+    // numbers drive rt60/damping/pre-delay/wet.
     const ta = track?.audio ?? {};
-    const revName = ta.reverb?.preset ?? ta.reverb?.name ?? ta.reverbId
-      ?? (typeof ta.reverb === 'string' ? ta.reverb : null)
-      ?? track?.environment?.skybox ?? track?.id;
-    const hasExplicitRoom = !!revName;
-    this.setReverb(revName, 0.6, ta.reverb && typeof ta.reverb === 'object' ? ta.reverb.wet : undefined);
+    const env = track?.environment ?? {};
+    // `environment.skybox` is often an object ({ preset:'museum', mode:'indoor' }).
+    const skyHint = typeof env.skybox === 'string' ? env.skybox : env.skybox?.preset;
+    const namedRoom = ta.reverbId ?? ta.reverbPreset
+      ?? (typeof ta.reverb === 'string' ? ta.reverb : (ta.reverb?.preset ?? ta.reverb?.name));
+    const ambId = ta.ambienceId ?? ta.ambience ?? skyHint ?? track?.id ?? 'default';
+    const roomHint = namedRoom ?? ambId ?? skyHint ?? track?.id;
+    const revParams = (ta.reverb && typeof ta.reverb === 'object'
+      && (ta.reverb.roomSize != null || ta.reverb.rt60 != null || ta.reverb.decay != null))
+      ? ta.reverb : null;
 
-    const ambId = ta.ambienceId ?? ta.ambience ?? track?.id ?? 'default';
+    if (revParams) {
+      this.setReverb(reverbDescFromParams(revParams, roomHint), 0.6);
+    } else {
+      this.setReverb(roomHint, 0.6, ta.reverb?.wet);
+    }
+    // The ambience bed only picks the room when the track said nothing about it.
+    const hasExplicitRoom = !!(namedRoom || revParams);
     this.setAmbience(ambId, 1.6, { applyReverb: !hasExplicitRoom });
+
+    if (CONFIG.debug) {
+      console.info(`[Audio] track "${track?.id}" → reverb=${this._reverbName} ambience=${this.ambienceId}`);
+    }
 
     this._syncCars(true);
     this._lastLapAnnounced = -1;
@@ -313,8 +338,8 @@ export class AudioSystem {
     this.tires.clear();
     for (const s of this._scrapes.values()) s.handle?.stop?.(0.1);
     this._scrapes.clear();
-    this.stopLoop('boost');
-    this.stopLoop('pickupRoll');
+    // Every named loop (boost:N, bomb:N, electro:N, pickupRoll…) goes with it.
+    for (const key of Array.from(this._loops.keys())) this.stopLoop(key, 0.1);
     this._carsRef = null;
     this._carCount = -1;
     this.pool?.stopAll(0.15, false);
@@ -369,23 +394,45 @@ export class AudioSystem {
     const ts = clamp(fin(this.game?.loop?.timeScale, 1), 0.15, 2);
     this.pitchScale = damp(this.pitchScale, lerp(0.72, 1, clamp01(ts)), 8, rd);
 
-    // Duck (pause / menus / cinematics).
+    // Duck (pause / menus / cinematics). Only written when it actually moves —
+    // scheduling an automation event every frame for a static value is waste.
     this._duck = damp(this._duck, this._duckTarget, 5, rd);
-    if (this.sfxGain) targetTo(this.sfxGain.gain, this._volSfx * this._duck, this.ctx.currentTime, 0.08);
-    if (this.engineGain) targetTo(this.engineGain.gain, this._volEngine * this._duck, this.ctx.currentTime, 0.08);
+    const wantSfx = this._volSfx * this._duck;
+    const wantEng = this._volEngine * this._duck;
+    if (this.sfxGain && Math.abs(wantSfx - this._lastSfxG) > 0.0015) {
+      this._lastSfxG = wantSfx;
+      targetTo(this.sfxGain.gain, wantSfx, this.ctx.currentTime, 0.08);
+    }
+    if (this.engineGain && Math.abs(wantEng - this._lastEngG) > 0.0015) {
+      this._lastEngG = wantEng;
+      targetTo(this.engineGain.gain, wantEng, this.ctx.currentTime, 0.08);
+    }
 
     this.listener?.update(rd);
     this._syncCars(false);
 
     // ── per-car voices ──
+    // A car 30 m away does not need its ~30 AudioParams rewritten 60×/s. Cars
+    // are updated at a stride set by their detail tier and the elapsed time is
+    // scaled to match, so every smoothing time-constant stays correct. The
+    // player is always tier 2, so the car you are driving never strides.
+    this._frame++;
     const cars = this.game?.cars;
     if (Array.isArray(cars)) {
       for (let i = 0; i < cars.length; i++) {
         const car = cars[i];
         if (!car) continue;
         const id = car.id ?? i;
-        this.engines.get(id)?.update(rd, car);
-        this.tires.get(id)?.update(rd, car);
+        const e = this.engines.get(id);
+        if (e) {
+          const stride = e.tier === 2 ? 1 : e.tier === 1 ? 2 : 4;
+          if (stride === 1 || (this._frame + i) % stride === 0) e.update(rd * stride, car);
+        }
+        const t = this.tires.get(id);
+        if (t) {
+          const stride = t.tier === 2 ? 1 : t.tier === 1 ? 2 : 4;
+          if (stride === 1 || (this._frame + i) % stride === 0) t.update(rd * stride, car);
+        }
       }
     }
 
@@ -586,9 +633,9 @@ export class AudioSystem {
    */
   setReverb(nameOrDesc, fade = 0.7, wet = undefined) {
     if (!this.reverb) return;
-    const name = typeof nameOrDesc === 'string' || !nameOrDesc
-      ? resolveReverbName(nameOrDesc) : nameOrDesc;
-    this._reverbName = typeof name === 'string' ? name : 'custom';
+    const name = (nameOrDesc && typeof nameOrDesc === 'object' && nameOrDesc.rt60 != null)
+      ? nameOrDesc : resolveReverbName(nameOrDesc);
+    this._reverbName = typeof name === 'string' ? name : (name.name ?? 'custom');
     this.reverb.setPreset(name, fade, wet);
   }
 
@@ -665,7 +712,7 @@ export class AudioSystem {
     for (const [id, s] of this._scrapes) {
       s.level = Math.max(0, s.level - dt * 3.2);
       const car = this._carById(id);
-      const wantSound = s.level > 0.06 && car && active < 3;
+      const wantSound = s.level > 0.06 && car && (car.isPlayer || active < 3);
       if (!wantSound) {
         if (s.handle) { s.handle.stop(0.12); s.handle = null; }
         if (s.level <= 0.001) this._scrapes.delete(id);

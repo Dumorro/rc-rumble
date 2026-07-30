@@ -114,6 +114,9 @@ export class TireAudio {
     this.squealLevel = 0;
 
     this._layers = [];
+    /** Last value written per param slot; NaN = never written. See `_w`. */
+    this._pw = new Float32Array(24).fill(NaN);
+    this._nowT = 0;
     this._build();
   }
 
@@ -225,6 +228,22 @@ export class TireAudio {
     }
   }
 
+
+  /**
+   * Change-gated AudioParam write — see the twin in EngineSynth. Each call site
+   * owns a slot in `_pw`; we only schedule automation once the value has moved
+   * past `eps`, which cuts the per-frame audio-thread call count by roughly 3×
+   * in a tightly packed field without changing what anything sounds like.
+   */
+  _w(i, param, v, tau, eps) {
+    if (!param) return;
+    const val = fin(v);
+    const last = this._pw[i];
+    if (last === last && Math.abs(val - last) <= eps) return;
+    this._pw[i] = val;
+    targetTo(param, val, this._nowT, tau);
+  }
+
   /**
    * @param {number} dt
    * @param {object} [car]
@@ -234,6 +253,7 @@ export class TireAudio {
     const c = car || this.car;
     if (!c) return;
     const now = this.ctx.currentTime;
+    this._nowT = now;
     const d = clamp(fin(dt, 0.016), 0.0001, 0.1);
 
     // ── position ──────────────────────────────────────────────────────────
@@ -241,9 +261,9 @@ export class TireAudio {
     const px = p ? fin(p.x) : 0, py = p ? fin(p.y) : 0, pz = p ? fin(p.z) : 0;
     if (this.panner) {
       if (this.panner.positionX) {
-        targetTo(this.panner.positionX, px, now, 0.012);
-        targetTo(this.panner.positionY, py, now, 0.012);
-        targetTo(this.panner.positionZ, pz, now, 0.012);
+        this._w(0, this.panner.positionX, px, 0.012, 0.002);
+        this._w(1, this.panner.positionY, py, 0.012, 0.002);
+        this._w(2, this.panner.positionZ, pz, 0.012, 0.002);
       } else if (this.panner.setPosition) {
         try { this.panner.setPosition(px, py, pz); } catch { /* ignore */ }
       }
@@ -340,23 +360,23 @@ export class TireAudio {
     this.squealLevel = sqAmount * cur.sqG;
     if (this.sqBP) {
       const f = cur.sqF * (0.82 + 0.36 * this.slip) * (0.92 + 0.16 * this.speedN) * warble * dop;
-      targetTo(this.sqBP.frequency, clamp(f, 120, Math.min(9000, this.nyq)), now, 0.02);
-      targetTo(this.sqBP.Q, cur.sqQ * (0.7 + 0.5 * this.slip), now, 0.05);
-      targetTo(this.sqBP2.frequency, clamp(f * 2.02, 200, this.nyq), now, 0.03);
-      targetTo(this.sqBP2.gain, 3 + 5 * this.slip, now, 0.05);
-      targetTo(this.sqG.gain, this.squealLevel * loadBoost * 0.42, now, 0.03);
+      this._w(3, this.sqBP.frequency, clamp(f, 120, Math.min(9000, this.nyq)), 0.02, 4);
+      this._w(4, this.sqBP.Q, cur.sqQ * (0.7 + 0.5 * this.slip), 0.05, 0.03);
+      this._w(5, this.sqBP2.frequency, clamp(f * 2.02, 200, this.nyq), 0.03, 8);
+      this._w(6, this.sqBP2.gain, 3 + 5 * this.slip, 0.05, 0.03);
+      this._w(7, this.sqG.gain, this.squealLevel * loadBoost * 0.42, 0.03, 0.0012);
     }
 
     // ── rolling bed ───────────────────────────────────────────────────────
     if (this.rlLP) {
       const bright = lerp(cur.rlF0, cur.rlF1, Math.pow(this.speedN, 0.75));
-      targetTo(this.rlLP.frequency, clamp(bright * dop, 90, this.nyq), now, 0.04);
-      targetTo(this.rlLP.Q, cur.rlQ, now, 0.08);
-      targetTo(this.rlPeak.frequency, clamp(bright * 0.55, 90, Math.min(9000, this.nyq)), now, 0.06);
-      targetTo(this.rlPeak.gain, 2 + 5 * cur.rough, now, 0.08);
+      this._w(8, this.rlLP.frequency, clamp(bright * dop, 90, this.nyq), 0.04, 6);
+      this._w(9, this.rlLP.Q, cur.rlQ, 0.08, 0.01);
+      this._w(10, this.rlPeak.frequency, clamp(bright * 0.55, 90, Math.min(9000, this.nyq)), 0.06, 4);
+      this._w(11, this.rlPeak.gain, 2 + 5 * cur.rough, 0.08, 0.02);
       const rollLvl = cur.rlG * Math.pow(this.speedN, 0.68) * this.grounded
         * (0.55 + 0.45 * cur.rough) * 0.30;
-      targetTo(this.rlG.gain, rollLvl, now, 0.04);
+      this._w(12, this.rlG.gain, rollLvl, 0.04, 0.0012);
     }
 
     // ── grit (loose surfaces) ─────────────────────────────────────────────
@@ -365,9 +385,10 @@ export class TireAudio {
       const rattle = 0.55 + 0.45 * Math.sin(this.gritPhase * 1.7) * (0.35 + 0.65 * this._rng.next());
       const lvl = cur.grG * Math.pow(this.speedN, 0.6) * this.grounded * rattle * 0.26
         * (1 + 0.5 * this.slip);
-      targetTo(this.grG.gain, lvl, now, 0.02);
-      targetTo(this.grBP.frequency, clamp(cur.grF * (0.85 + 0.4 * this.speedN), 60, Math.min(2000, this.nyq)), now, 0.06);
-      targetTo(this.grBP.Q, 1.1 + 1.2 * cur.rough, now, 0.08);
+      // Deliberately loose epsilon: the grit layer's jitter IS the rattle.
+      this._w(13, this.grG.gain, lvl, 0.02, 0.0004);
+      this._w(14, this.grBP.frequency, clamp(cur.grF * (0.85 + 0.4 * this.speedN), 60, Math.min(2000, this.nyq)), 0.06, 2);
+      this._w(15, this.grBP.Q, 1.1 + 1.2 * cur.rough, 0.08, 0.01);
     }
 
     // ── hiss / spray ──────────────────────────────────────────────────────
@@ -375,24 +396,24 @@ export class TireAudio {
       const water = this.surfaceId === 9 ? 1 : 0;
       const lvl = cur.hsG * (0.22 + 0.78 * Math.pow(this.speedN, 0.85)) * this.grounded
         * (1 + 0.9 * this.slip * (1 - water)) * 0.20;
-      targetTo(this.hsG.gain, lvl, now, 0.04);
-      targetTo(this.hsBP.frequency, clamp(cur.hsF * (0.8 + 0.35 * this.speedN) * dop, 400, this.nyq), now, 0.05);
-      targetTo(this.hsBP.Q, water ? 0.45 : 0.8, now, 0.08);
+      this._w(16, this.hsG.gain, lvl, 0.04, 0.0012);
+      this._w(17, this.hsBP.frequency, clamp(cur.hsF * (0.8 + 0.35 * this.speedN) * dop, 400, this.nyq), 0.05, 8);
+      this._w(18, this.hsBP.Q, water ? 0.45 : 0.8, 0.08, 0.01);
     }
 
     // ── wind (player) ─────────────────────────────────────────────────────
     if (this.wdG) {
       const s2 = this.speedN * this.speedN;
-      targetTo(this.wdG.gain, s2 * 0.24, now, 0.06);
-      targetTo(this.wdLP.frequency, clamp(lerp(380, 1500, this.speedN), 200, Math.min(4000, this.nyq)), now, 0.08);
+      this._w(19, this.wdG.gain, s2 * 0.24, 0.06, 0.0012);
+      this._w(20, this.wdLP.frequency, clamp(lerp(380, 1500, this.speedN), 200, Math.min(4000, this.nyq)), 0.08, 4);
     }
 
     // ── overall ───────────────────────────────────────────────────────────
     const activity = clamp01(0.12 + 0.9 * this.speedN + 0.7 * this.slip) * this.grounded;
     const near = this.isPlayer ? 1.0 : 0.85;
-    targetTo(this.out.gain, clamp01(activity) * near * 0.9, now, 0.05);
-    targetTo(this.tame.frequency, clamp(Math.min(9000, this.nyq) / (1 + this.distance * 0.08), 1200, this.nyq), now, 0.15);
-    if (this.send) targetTo(this.send.gain, 0.07 + 0.08 * clamp01(this.distance / 20), now, 0.2);
+    this._w(21, this.out.gain, clamp01(activity) * near * 0.9, 0.05, 0.0015);
+    this._w(22, this.tame.frequency, clamp(Math.min(9000, this.nyq) / (1 + this.distance * 0.08), 1200, this.nyq), 0.15, 12);
+    if (this.send) this._w(23, this.send.gain, 0.07 + 0.08 * clamp01(this.distance / 20), 0.2, 0.004);
   }
 
   setMuted(m) {
