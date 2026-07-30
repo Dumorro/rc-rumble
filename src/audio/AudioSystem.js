@@ -83,6 +83,14 @@ export class AudioSystem {
     this._scrapes = new Map();
     /** @type {Map<string, object>} */
     this._loops = new Map();
+    /**
+     * Cars carrying a live bomb → the fuse length that bomb started with, so
+     * the urgency ramp survives a hand-off. Populated by polling, not events.
+     * @type {Map<number, number>}
+     */
+    this._bombs = new Map();
+    /** Cars with a live boost loop, so it can be followed and then stopped. */
+    this._boosts = new Set();
 
     this.rng = new RNG((CONFIG.seed ?? 1) ^ 0xa0d10);
     this.pitchScale = 1;                 // slow-mo pitch (engines + music tone)
@@ -324,6 +332,8 @@ export class AudioSystem {
     }
 
     this._syncCars(true);
+    this._bombs.clear();
+    this._boosts.clear();
     this._lastLapAnnounced = -1;
     this._musicIntensity = 0.25;
     this.setMusicIntent('race');
@@ -340,6 +350,8 @@ export class AudioSystem {
     this._scrapes.clear();
     // Every named loop (boost:N, bomb:N, electro:N, pickupRoll…) goes with it.
     for (const key of Array.from(this._loops.keys())) this.stopLoop(key, 0.1);
+    this._bombs.clear();
+    this._boosts.clear();
     this._carsRef = null;
     this._carCount = -1;
     this.pool?.stopAll(0.15, false);
@@ -437,6 +449,7 @@ export class AudioSystem {
     }
 
     this._updateScrapes(rd);
+    this._updateLoopedFx();
     this._updateAmbience(rd);
     this._updateMusicIntensity(rd);
     this.music?.update(rd);
@@ -836,6 +849,15 @@ export class AudioSystem {
 
   stopBoost(car) { this.stopLoop(`boost:${car?.id ?? 0}`, 0.2); }
 
+  /**
+   * Ticks per second for a fuse at `urgency` 0..1.
+   *
+   * Deliberately the same curve the bomb entity uses to drive its own beep
+   * cadence and spark flicker (`Bomb.update`), so the sound you hear and the
+   * sparking you see are the same event and not two drifting timelines.
+   */
+  static bombTickRate(urgency) { return 1.4 + clamp01(urgency) * 9.5; }
+
   /** Bomb fuse. `rate` = ticks per second; raise it as the timer runs out. */
   startBombTick(id, position, rate = 2) {
     return this.startLoop(`bomb:${id}`, 'bomb/tick', { position, rate });
@@ -849,6 +871,63 @@ export class AudioSystem {
   }
 
   stopBombTick(id) { this.stopLoop(`bomb:${id}`, 0.05); }
+
+  /** Scratch world position of a car by id, or null. Never allocates. */
+  _carPos(id) {
+    const p = this._carById(id)?.group?.position;
+    if (!p) return null;
+    _p.x = fin(p.x); _p.y = fin(p.y); _p.z = fin(p.z);
+    return _p;
+  }
+
+  /**
+   * Follow every looped per-car effect. Runs each frame because these ride on
+   * moving cars: a bomb tick or a turbo whoosh pinned to a stale position pans
+   * to the wrong side of your head within one corner.
+   *
+   * The bomb is driven by POLLING `car.hasBomb` / `car.bombFuse` rather than by
+   * tracking bomb:attach/transfer/explode. Those events are all real, but a
+   * looping sound started by one event and stopped by another leaks the moment
+   * any single stop is missed — and the bomb has four ways to leave a car
+   * (explode, transfer, entity expiry, race reset), only two of which announce
+   * themselves. Polling the state the entity already writes every frame cannot
+   * get out of step with it.
+   */
+  _updateLoopedFx() {
+    const cars = this.game?.cars;
+    if (Array.isArray(cars)) {
+      for (let i = 0; i < cars.length; i++) {
+        const car = cars[i];
+        if (!car) continue;
+        const id = car.id ?? i;
+        if (!car.hasBomb) {
+          if (this._bombs.has(id)) { this._bombs.delete(id); this.stopBombTick(id); }
+          continue;
+        }
+        const fuse = Math.max(0, fin(car.bombFuse, 0));
+        // The fuse a bomb STARTED with, so a hand-off mid-fuse does not reset
+        // the urgency ramp back to slow ticking.
+        let total = this._bombs.get(id) ?? 0;
+        if (fuse > total) { total = Math.max(fuse, 0.5); this._bombs.set(id, total); }
+        const rate = AudioSystem.bombTickRate(1 - clamp01(fuse / total));
+        const p = this._carPos(id);
+        if (this.getLoop(`bomb:${id}`)) this.updateBombTick(id, p, rate);
+        else this.startBombTick(id, p, rate);
+      }
+    }
+    // Cars can be removed outright (race teardown); drop any loop they left.
+    for (const id of this._bombs.keys()) {
+      if (!this._carById(id)) { this._bombs.delete(id); this.stopBombTick(id); }
+    }
+
+    if (!this._boosts.size) return;
+    for (const id of this._boosts) {
+      const car = this._carById(id);
+      // Belt and braces: if the car vanished, drop the loop rather than leak it.
+      if (!car) { this._boosts.delete(id); this.stopLoop(`boost:${id}`, 0.2); continue; }
+      this.updateBoost(car, clamp01((car.effects?.boost ?? 0) / 1.2));
+    }
+  }
 
   /** Held electro stun buzz. */
   startElectro(car) {
@@ -1024,7 +1103,10 @@ export class AudioSystem {
         volume: car?.isPlayer ? 1 : 0.75,
       });
       const fam = weaponFamily(e.weaponId);
-      if (fam === 'turbo' || fam === 'battery') this.startBoost(car);
+      if ((fam === 'turbo' || fam === 'battery') && car) {
+        this.startBoost(car);
+        this._boosts.add(car.id ?? 0);
+      }
     });
 
     on('weapon:hit', (e) => {
@@ -1036,6 +1118,19 @@ export class AudioSystem {
       });
       const target = this._carById(e.carId);
       if (target?.isPlayer) this.game?.input?.rumble?.(0.8, 0.6, 200);
+    });
+
+    // ── boost loop teardown ───────────────────────────────────────────────
+    // `startBoost` was wired to `pickup:used` but nothing ever called
+    // `stopBoost` or `updateBoost`, so the turbo loop ran until the next
+    // `stopAll()` — a drone for the rest of the race, stuck at the position
+    // the car occupied when it fired.
+    on('effect:end', (e) => {
+      if (!this.ready || !e || e.effect !== 'boost') return;
+      this._boosts.delete(e.carId);
+      const car = this._carById(e.carId);
+      if (car) this.stopBoost(car);
+      else this.stopLoop(`boost:${e.carId}`, 0.2);
     });
 
     // ── state / UI ────────────────────────────────────────────────────────

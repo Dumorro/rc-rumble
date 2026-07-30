@@ -60,6 +60,13 @@ export class HUD {
     this._maxKmh = 140;
     this._vw = 1280;
     this._vh = 720;
+
+    // ── bomb fuse ──
+    // `bomb:tick` arrives at 1.4–10.9 Hz, far too coarse to animate a bar from,
+    // so the tick sets the truth and the HUD counts down locally between them.
+    this._bombHeld = false;
+    this._bombTotal = 1;
+    this._bombPulse = 0;
   }
 
   // ═══════════════════════════════════════════════════════════════ build
@@ -93,10 +100,11 @@ export class HUD {
       oiled: el('.hud-vig.oiled'),
       soaked: el('.hud-vig.soaked'),
       damage: el('.hud-vig.damage'),
+      bomb: el('.hud-vig.bomb'),
     };
     this.blind = el('.hud-blind');
     root.append(this.vig.boost, this.vig.frozen, this.vig.electro,
-      this.vig.oiled, this.vig.soaked, this.vig.damage, this.blind);
+      this.vig.oiled, this.vig.soaked, this.vig.damage, this.vig.bomb, this.blind);
 
     // ── top-left: position + ladder ──
     // The place, its ordinal suffix and the field size share one canvas so the
@@ -147,6 +155,15 @@ export class HUD {
       },
     }, this.pickup.canvas);
     root.appendChild(this.pickupWrap);
+
+    // ── bomb fuse (above the pickup slot) ──
+    this.bombSecs = el('span.hud-bomb-secs', { text: '0.0' });
+    this.bombFill = el('.hud-bomb-fill');
+    this.bombWrap = el('.hud-bomb', null,
+      el('.hud-bomb-head', null,
+        el('span', { text: 'Bomb' }), this.bombSecs),
+      el('.hud-bomb-track', null, this.bombFill));
+    root.appendChild(this.bombWrap);
 
     // ── centre overlays ──
     this.countWrap = el('.hud-count');
@@ -302,6 +319,12 @@ export class HUD {
     sub('bomb:explode', (e) => {
       if (isPlayer(e?.carId)) this.toast('BOOM', 'bad', 1.6);
     });
+    // The readout itself reads `car.hasBomb` / `car.bombFuse` each frame — see
+    // _updateBomb. The tick event is used ONLY to flash the vignette, because a
+    // discrete flash is the one thing a per-frame poll cannot reconstruct.
+    sub('bomb:tick', (e) => {
+      if (isPlayer(e?.carId)) this._bombPulse = 1;
+    });
 
     sub('car:respawn', (e) => {
       if (!isPlayer(e?.carId)) return;
@@ -333,6 +356,7 @@ export class HUD {
     this.bannerWrap.style.display = 'none';
     clear(this.toastWrap);
     this._toasts.length = 0;
+    this._dropBomb();
 
     const def = this.game?.playerCar?.def;
     this._displaySpeedScale = this.game?.carSystem?.displaySpeedScale ?? 13.333;
@@ -347,6 +371,7 @@ export class HUD {
     this.minimap.clear();
     clear(this.toastWrap);
     this._toasts.length = 0;
+    this._dropBomb();
     setClass(this.wrongWayEl, 'show', false);
     setClass(this.finishWrap, 'show', false);
     this.countWrap.style.display = 'none';
@@ -402,6 +427,7 @@ export class HUD {
 
     this._updateToasts(rawDt);
     this._updateCountdown(rawDt);
+    this._updateBomb(rawDt, car);
 
     // ── speedo ──
     const kmh = car ? (car.speedKmh ?? Math.abs(car.speed ?? 0) * this._displaySpeedScale) : 0;
@@ -618,6 +644,72 @@ export class HUD {
     void this.countWrap.offsetWidth;
     this.countWrap.classList.add('punch');
     this._countTimer = n <= 0 ? 0.9 : 0.95;
+  }
+
+  // ═══════════════════════════════════════════════════════════════ bomb fuse
+
+  _dropBomb() {
+    this._bombHeld = false;
+    this._bombTotal = 1;
+    this._bombPulse = 0;
+    setClass(this.bombWrap, 'show', false);
+    setStyle(this.vig.bomb, 'opacity', '0');
+  }
+
+  /**
+   * Peripheral-vision readout. Three cues, in the order they actually get read
+   * when your eyes are on the car ahead:
+   *
+   *   1. the whole screen pulsing red on every fuse tick, faster and harder as
+   *      it runs out — motion and luminance, which is what peripheral vision
+   *      is good at;
+   *   2. the bar shortening and ramping amber → red;
+   *   3. the digits, which only work if you actually look, and so carry least.
+   *
+   * Driven by polling `car.hasBomb` / `car.bombFuse` rather than by tracking
+   * the bomb:* events. Both are documented Car contract fields written every
+   * frame by the bomb entity, and a poll cannot get out of step with the
+   * simulation the way a missed attach or transfer event can.
+   */
+  _updateBomb(rawDt, car) {
+    const held = !!car?.hasBomb;
+    if (!held) {
+      if (this._bombHeld) this._dropBomb();
+      return;
+    }
+    if (!this._bombHeld) {
+      this._bombHeld = true;
+      this._bombPulse = 1;
+      setClass(this.bombWrap, 'show', true);
+    }
+
+    const fuse = Math.max(0, Number(car.bombFuse) || 0);
+    this._bombPulse = Math.max(0, this._bombPulse - rawDt * 6.5);
+    // A hand-off arrives mid-fuse, so the bar is scaled by the longest fuse
+    // seen for this bomb — inheriting one with half a second left must not
+    // show a full bar. Reset by _dropBomb when the bomb leaves.
+    this._bombTotal = Math.max(this._bombTotal, fuse, 0.5);
+
+    const frac = clamp01(fuse / this._bombTotal);
+    const urgency = 1 - frac;
+
+    setText(this.bombSecs, fuse.toFixed(1));
+    setStyle(this.bombFill, 'transform', `scaleX(${frac.toFixed(3)})`);
+
+    // Amber at the start, pure red at the end, brightening as it goes.
+    const r = 255;
+    const g = Math.round(190 - 170 * urgency);
+    const b = Math.round(70 - 62 * urgency);
+    const glow = 6 + 16 * urgency + 8 * this._bombPulse;
+    setStyle(this.bombFill, 'background',
+      `linear-gradient(90deg, rgb(${r},${g},${b}), rgb(255,${Math.max(0, g - 40)},20))`);
+    setStyle(this.bombFill, 'boxShadow', `0 0 ${glow.toFixed(0)}px rgba(255,${g},40,.85)`);
+
+    // The vignette carries the tick. Floor rises with urgency so the screen is
+    // never fully clear once the fuse is short, and the pulse rides on top.
+    const floor = 0.06 + 0.20 * urgency * urgency;
+    const vig = clamp01(floor + this._bombPulse * (0.16 + 0.42 * urgency));
+    setStyle(this.vig.bomb, 'opacity', vig.toFixed(3));
   }
 
   _updateCountdown(rawDt) {

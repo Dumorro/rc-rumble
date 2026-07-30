@@ -275,14 +275,10 @@ const CONTRACT_ALLOW = {
     'Dead bookkeeping, verified harmless. Written at PickupSystem.js:280/316/411 and read '
     + 'nowhere; `ammo` is the live field and is what the HUD renders (PickupSlot.js:64,155). '
     + 'Nothing is missing — `uses` is a redundant copy, not an unwired feature.',
-  hasBomb:
-    'Genuinely read, single-directory: it is the hand-off guard that stops the bomb being '
-    + 'passed to a car that already holds one (Bomb.js:90,93,99,188). A false positive of the '
-    + '2-directory heuristic, not a gap in the code.',
 };
 
 /**
- * REAL DEFECTS the rule caught that this agent cannot fix from its own scope.
+ * REAL DEFECTS the rule caught that nobody is in a position to fix yet.
  *
  * These are NOT exemptions. Each one is a producer with no consumer — the exact
  * class of bug this rule exists to find. They are held here instead of in
@@ -291,19 +287,13 @@ const CONTRACT_ALLOW = {
  * is not blocked by a defect its author did not introduce.
  *
  * Delete an entry the moment it is wired up. Do not add one to quiet a failure.
+ *
+ * Currently empty: `bombFuse` lived here until the fuse countdown was wired to
+ * the HUD and the audio tick loop, and `hasBomb` was allowlisted as a
+ * single-directory false positive until the same change gave it a second
+ * consumer. Both are now covered by the rule proper.
  */
-const CONTRACT_KNOWN_INERT = {
-  bombFuse:
-    'BOMB FUSE COUNTDOWN IS INERT. `car.bombFuse` is written every frame '
-    + '(Bomb.js:166,274) and read by nothing; so is `car.effects.bomb` (Bomb.js:167,275), '
-    + 'whose key is not even in Effects.EFFECT_KEYS. `bomb:tick` is emitted at an '
-    + 'accelerating 1.4→10.9 Hz cadence carrying {carId, fuse, urgency} (Bomb.js:210) and has '
-    + 'no subscriber. AudioSystem.startBombTick/updateBombTick/stopBombTick (AudioSystem.js:'
-    + '840-851) are fully implemented over a `bomb/tick` sample and are called only by the '
-    + 'audio selftest. Net effect: the hot-potato bomb has no HUD countdown and makes no '
-    + 'ticking sound — the player gets a "BOMB ON BOARD!" toast, an in-world spark/glow on '
-    + 'the bomb mesh, then "BOOM". Fix is in src/ui + src/audio, which this agent does not own.',
-};
+const CONTRACT_KNOWN_INERT = {};
 
 /**
  * Field names from the ARCHITECTURE.md contracts. Two sources, deliberately:

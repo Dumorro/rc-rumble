@@ -35,7 +35,7 @@
  *   node tools/smoke.mjs --track=garden  smoke a different track
  */
 
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, openSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -162,6 +162,42 @@ function run(cmd, args, label) {
   return res.stdout ?? '';
 }
 
+/** Ask the OS for a port nobody is using, so parallel runs cannot collide. */
+async function freePort(preferred) {
+  const net = await import('node:net');
+  const tryPort = (p) => new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.once('error', () => resolve(0));
+    srv.listen(p, '127.0.0.1', () => { const { port } = srv.address(); srv.close(() => resolve(port)); });
+  });
+  return (await tryPort(preferred)) || (await tryPort(0));
+}
+
+/**
+ * Start `vite preview` as its own process group.
+ *
+ * Deliberately NOT via `npx`: npx forks a grandchild, so `child.kill()` reaps
+ * the wrapper and leaves the real server holding the port. The next run then
+ * finds the port busy, silently talks to the stale server, and fails in a way
+ * that looks like a game bug. `detached: true` + `kill(-pid)` takes the whole
+ * group down.
+ */
+function startPreview(port, logPath) {
+  const viteBin = join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
+  const out = existsSync(join(ROOT, 'node_modules')) ? openSync(logPath, 'w') : 'ignore';
+  const child = spawn(process.execPath, [viteBin, 'preview', '--port', String(port), '--strictPort'], {
+    cwd: ROOT, detached: true, stdio: ['ignore', out, out],
+  });
+  child.unref();
+  return {
+    child,
+    kill() {
+      try { process.kill(-child.pid, 'SIGKILL'); }
+      catch { try { child.kill('SIGKILL'); } catch { /* already gone */ } }
+    },
+  };
+}
+
 async function waitForServer(url, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -230,13 +266,13 @@ async function main() {
       console.log(C.red('  ✗ --no-build given but dist/index.html does not exist'));
       process.exit(1);
     }
-    base = `http://localhost:${OPTS.port}`;
-    server = spawn('npx', ['vite', 'preview', '--port', String(OPTS.port), '--strictPort'], {
-      cwd: ROOT, stdio: 'ignore', detached: false,
-    });
+    if (OPTS.keepShots) mkdirSync(SHOTS, { recursive: true });
+    const port = await freePort(OPTS.port);
+    base = `http://127.0.0.1:${port}`;
+    server = startPreview(port, join(SHOTS, 'preview.log'));
     // Reap it however we exit — a crash between here and the `finally` used to
     // leave the port held, and the NEXT run then talked to a stale server.
-    registerCleanup(() => { try { server.kill('SIGKILL'); } catch { /* gone */ } });
+    registerCleanup(() => server.kill());
     if (!(await waitForServer(base))) {
       console.log(C.red(`  ✗ preview server never came up on ${base}`));
       process.exit(1);
@@ -244,7 +280,7 @@ async function main() {
   }
   console.log(C.dim(`serving: ${base}`));
 
-  if (OPTS.keepShots) { rmSync(SHOTS, { recursive: true, force: true }); mkdirSync(SHOTS, { recursive: true }); }
+  if (OPTS.keepShots) mkdirSync(SHOTS, { recursive: true });
 
   const browser = await chromium.launch({
     headless: !OPTS.headed,
@@ -267,7 +303,7 @@ async function main() {
     await menuScenario(browser, base);
   } finally {
     await browser.close().catch(() => {});
-    if (server) { try { server.kill('SIGKILL'); } catch { /* already gone */ } }
+    if (server) server.kill();
   }
 
   console.log(C.bold('\n▸ Summary\n'));
@@ -298,14 +334,22 @@ async function raceScenario(browser, base) {
 
   try {
     // 1. boot
+    let bootWhy = '';
     const booted = await page.waitForFunction(
-      () => !!globalThis.GAME && globalThis.GAME.loop?.frame > 4,
-      null, { timeout: 90_000 },
-    ).then(() => true).catch(() => false);
-    check('boots and starts the frame loop', booted);
+      () => !!globalThis.GAME && globalThis.GAME.loop && globalThis.GAME.loop.frame > 4,
+      null, { timeout: 90_000, polling: 500 },
+    ).then(() => true).catch((e) => { bootWhy = e.message.split('\n')[0]; return false; });
+    check('boots and starts the frame loop', booted, bootWhy);
     if (!booted) {
-      const err = await page.textContent('#boot-err').catch(() => '');
-      if (err) console.log(C.dim(`      boot error: ${err.split('\n')[0]}`));
+      const diag = await page.evaluate(() => ({
+        hasGame: !!globalThis.GAME,
+        frame: globalThis.GAME?.loop?.frame ?? -1,
+        state: globalThis.GAME?.state ?? null,
+        bootMsg: document.getElementById('boot-msg')?.textContent ?? '',
+        bootErr: (document.getElementById('boot-err')?.textContent ?? '').split('\n')[0],
+      })).catch((e) => ({ evalFailed: e.message.split('\n')[0] }));
+      console.log(C.dim(`      ${JSON.stringify(diag)}`));
+      if (errors.length) console.log(C.dim(`      console: ${errors.slice(0, 3).join(' | ')}`));
       return;
     }
 

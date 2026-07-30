@@ -828,9 +828,38 @@ ${cssVars()}
 .hud-vig.soaked  { background: radial-gradient(110% 90% at 50% 44%, rgba(120,200,255,0) 30%, rgba(150,210,255,.55) 100%); }
 .hud-vig.boost   { background: radial-gradient(120% 92% at 50% 50%, rgba(255,150,40,0) 52%, rgba(255,140,30,.42) 100%); }
 .hud-vig.damage  { background: radial-gradient(110% 90% at 50% 50%, rgba(255,40,60,0) 42%, rgba(255,30,50,.60) 100%); }
+/* The bomb vignette is the ONLY one driven per-frame rather than eased, because
+   it flashes on every fuse tick — up to 10.9 Hz, a 92 ms period. The shared
+   .22s opacity transition would smear those pulses into a constant glow and
+   throw away the one cue that reads without looking at it. */
+.hud-vig.bomb    { background: radial-gradient(118% 92% at 50% 50%, rgba(255,70,20,0) 40%, rgba(255,52,16,.74) 100%); transition: none; }
 .hud-blind { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .3s linear;
   background: radial-gradient(70% 60% at 50% 48%, rgba(190,225,255,.94), rgba(160,205,255,.55) 60%, rgba(120,170,230,.15) 100%);
   backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px); }
+
+/* bomb fuse — centre-bottom, directly above the pickup slot.
+   Sized and coloured for peripheral vision: at 9 m/s you are looking at the car
+   you are trying to ram, not at the HUD, so the bar length and the colour ramp
+   carry the reading and the digits are only there for when you do glance. */
+.hud-bomb {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--safe-b) + 128px + var(--touch-lift, 0px));
+  display: none; flex-direction: column; align-items: center; gap: 5px;
+  pointer-events: none; transition: bottom .24s cubic-bezier(.16,1,.3,1);
+}
+.hud-bomb.show { display: flex; }
+.hud-bomb-head {
+  display: flex; align-items: baseline; gap: 9px;
+  font-size: 11px; letter-spacing: .30em; text-transform: uppercase;
+  color: #ffc8b0; text-shadow: 0 0 10px rgba(255,70,30,.55);
+}
+.hud-bomb-secs { font-variant-numeric: tabular-nums; font-size: 21px; letter-spacing: .04em; color: #fff; }
+.hud-bomb-track {
+  width: 216px; height: 9px; border-radius: 5px; overflow: hidden;
+  background: rgba(10,4,2,.62); border: 1px solid rgba(255,120,80,.30);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.6);
+}
+.hud-bomb-fill { height: 100%; width: 100%; transform-origin: left center; border-radius: 4px; }
 
 /* finish flourish */
 .hud-finish { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; pointer-events: none; }
