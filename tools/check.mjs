@@ -44,6 +44,18 @@ function walk(dir, out = []) {
 }
 
 const ALL_FILES = walk(SRC).filter((f) => ['.js', '.mjs'].includes(extname(f)));
+
+/**
+ * Repo-root .js/.mjs files, for the stray-scratch rule only.
+ *
+ * The scratch rule used to scan `src/` alone, so debugging harnesses dropped in
+ * the repo root (`_sc.mjs`, `_scratch_drift.mjs`) sailed straight past it — the
+ * exact files it exists to catch, in the most obvious place to leave them.
+ */
+const ROOT_FILES = readdirSync(ROOT)
+  .filter((n) => ['.js', '.mjs'].includes(extname(n)))
+  .filter((n) => !['vite.config.js', 'eslint.config.js'].includes(n))
+  .map((n) => join(ROOT, n));
 const rel = (f) => relative(ROOT, f);
 const isSelfTest = (f) => /__selftest__\.(mjs|js)$/.test(f);
 
@@ -219,7 +231,13 @@ const RULES = [
   },
   {
     name: 'no stray scratch files',
-    fileTest: (f) => /(?:^|\/)(?:__s\d+|__scratch__|scratch|tmp|temp)\.(?:m?js)$/.test(f),
+    // Also scans the repo root — see ROOT_FILES. Matches the shapes agents
+    // actually leave behind: __s1.mjs, __scratch__.mjs, _sc.mjs, _scratch_drift.mjs.
+    extraFiles: () => ROOT_FILES,
+    // A bare `sc` alternative matches Screen.js (sc + reen) — every scratch
+    // shape we actually see is either dunder-wrapped or underscore-prefixed,
+    // so require that rather than matching the letters anywhere in a name.
+    fileTest: (f) => /(?:^|\/)(?:__s\d+(?:__)?|__scratch__|_+(?:sc|scratch|tmp|temp)[-_a-z0-9]*)\.(?:m?js)$/i.test(f),
   },
   {
     name: 'no leftover focused/skipped test markers',
@@ -244,7 +262,8 @@ function runLint() {
   for (const rule of RULES) {
     const found = [];
 
-    for (const file of ALL_FILES) {
+    const scope = rule.extraFiles ? [...ALL_FILES, ...rule.extraFiles()] : ALL_FILES;
+    for (const file of scope) {
       if (rule.skip?.(file)) continue;
 
       if (rule.fileTest) {
