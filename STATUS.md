@@ -16,7 +16,8 @@ npm install
 npm run dev       # http://localhost:5173
 npm run build     # must stay green
 npm run preview   # serves dist/ on :4173
-npm run check     # self-tests + lint + contract wiring
+npm run check     # self-tests + lint + contract wiring + drivability  (no browser)
+npm run smoke     # builds, serves, and DRIVES the game in real Chromium
 ```
 
 ### URLs worth trying
@@ -29,7 +30,8 @@ npm run check     # self-tests + lint + contract wiring
 | `http://localhost:5173/?skipmenu=1&track=garden&debug=1&laps=2` | Garden, 2 laps |
 | `?car=phantom` · `?laps=1` · `?opponents=3` · `?quality=low\|medium\|high\|ultra` | Startup overrides (URL beats saved settings) |
 
-`GAME` is exposed on `window` whenever `?debug=1` is set.
+`GAME` is exposed on `window` whenever `?debug=1` is set. Without it there is no
+`window.GAME` at all — worth remembering before concluding the game failed to boot.
 
 ---
 
@@ -135,12 +137,12 @@ designed, but it means **the shipped default look is the degraded look**.
 
 1. **Countdown frame is unreadable** — near-maximum depth of field on both tracks.
    Owned by another agent.
-2. **Bomb fuse is inert** — `car.bombFuse` and `car.effects.bomb` are written every
-   frame and read by nobody; `bomb:tick` has no subscriber; the audio system's
-   `startBombTick`/`updateBombTick` are implemented but only called from its own
-   self-test. Net effect: no HUD countdown and no ticking sound. Flagged by
-   `npm run check`'s contract-wiring pass. *(A commit landed for this during the
-   session — re-verify.)*
+2. ~~**Bomb fuse is inert**~~ — **fixed and re-verified in the browser.** Firing a
+   bomb now emits `bomb:attach` once and `bomb:tick` 39× while `car.hasBomb` /
+   `car.bombFuse` count 7.83 s → 0.9 s on the victim. `HUD._updateBomb` exists and
+   polls those two fields; the bar stays hidden when the holder is not the player,
+   which is correct (the throw targets someone else). Verified on `toy_museum`,
+   dev server, `?debug=1`.
 
 **Observed, low severity:**
 
@@ -199,10 +201,10 @@ There are **no other warning categories**.
 
 ---
 
-## `npm run check`
+## `npm run check` — no browser required
 
-Runs 5 self-test suites sequentially (audio, camera, gameplay, physics, vehicle —
-**313 assertions**), then lint, then a contract-wiring pass:
+Runs 6 self-test suites sequentially (audio, camera, gameplay, physics, render,
+vehicle — **345 assertions**), then lint, then contract wiring, then drivability:
 
 - only `three` and relative paths may be imported
 - no `node:` builtins in browser code
@@ -211,14 +213,49 @@ Runs 5 self-test suites sequentially (audio, camera, gameplay, physics, vehicle 
 - no stray scratch files
 - no leftover focused/skipped test markers
 - every `ARCHITECTURE.md` contract field is referenced from 2+ systems
+- every registered track can actually be lapped (walks the centreline probing the
+  collision mesh; `toy_museum` 1391 stations, `garden` 1207)
 
 Currently **PASS**.
 
 ---
 
+## `npm run smoke` — the browser gate
+
+`tools/smoke.mjs` builds, serves `dist/` on a free port, opens real headless
+Chromium and asserts the things a green `vite build` cannot: that the module graph
+*executes*, that every `init()` resolves, that the boot overlay goes away, that a
+race loads with a full grid, that **holding the throttle moves the car forward and
+on the ground**, that the menu route renders, and that nothing wrote to
+`console.error`. 17 assertions. Currently **PASS** (17/17).
+
+Playwright is deliberately **not** a dependency — the script borrows an existing
+install (project → global → npx cache, which is where the Playwright MCP server
+leaves one) and *skips with exit 0* if there is none. `--require` turns a skip into
+a failure for CI. Screenshots land in `tools/.smoke/` (gitignored).
+
+Two traps are baked into the script because both cost hours here:
+
+- **It must launch with `channel: 'chromium'`.** Playwright's default for
+  `headless: true` is `chrome-headless-shell`, whose software WebGL path schedules
+  `requestAnimationFrame` at a few hertz. Under it the fixed-step loop pegs its
+  sub-step cap and the main thread stops answering `page.evaluate` entirely — the
+  identical build reported **4 frames** under the shell and **342** under full
+  Chrome-for-Testing. Every "the game never boots" failure traced back to this.
+- **It polls from Node, not with `page.waitForFunction`,** and keeps at most one
+  `evaluate` in flight. Issuing a new one each tick queues work behind a page that
+  is merely busy (the track build is ~6 s of straight-line synchronous work) and
+  turns "slow" into "never answers".
+
+The `sim loop is live` assertion is intentionally a liveness check (`fps > 2`), not
+a performance one: it has measured 4 fps on a loaded box while the same build ran
+at 58 in a foreground browser. Frame budget belongs in the table above, taken on an
+idle machine — not here.
+
+---
+
 ## Repo hygiene
 
-`_scratch_air.mjs`, `_scratch_diag.mjs`, `_scratch_drift.mjs`, `_scratch_jump.mjs` are
-sitting untracked in the repo root from an in-flight debugging session, and
-`.playwright-mcp/` has accumulated a few hundred artefacts. Neither is committed;
-both should be cleaned up or gitignored before this is called done.
+Clean. The `_scratch_*.mjs` debugging leftovers are gone (and `npm run check` now
+fails on any that come back), `.playwright-mcp/` and `tools/.smoke/` are gitignored,
+and `git status` shows no untracked files.
