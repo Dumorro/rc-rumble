@@ -1,0 +1,49 @@
+- generic [active] [ref=f1e1]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic: Lap
+              - generic: Last
+              - generic: Best
+              - generic: Race
+      - generic [ref=f1e5]:
+        - generic [ref=f1e7]:
+          - generic [ref=f1e8]:
+            - generic [ref=f1e9]: Radio Controlled Mayhem
+            - generic [ref=f1e12]: 1:10 scale · full contact
+          - menu [ref=f1e14]:
+            - button "Race Single race" [ref=f1e15] [cursor=pointer]:
+              - generic [ref=f1e16]: Race
+              - generic [ref=f1e17]: Single race
+            - button "Time Trial Alone against the clock" [ref=f1e18] [cursor=pointer]:
+              - generic [ref=f1e19]: Time Trial
+              - generic [ref=f1e20]: Alone against the clock
+            - button "Championship Every track, points scored" [ref=f1e21] [cursor=pointer]:
+              - generic [ref=f1e22]: Championship
+              - generic [ref=f1e23]: Every track, points scored
+            - button "Options Video · audio · camera" [ref=f1e24] [cursor=pointer]:
+              - generic [ref=f1e25]: Options
+              - generic [ref=f1e26]: Video · audio · camera
+            - button "Controls Keyboard · gamepad" [ref=f1e27] [cursor=pointer]:
+              - generic [ref=f1e28]: Controls
+              - generic [ref=f1e29]: Keyboard · gamepad
+        - generic [ref=f1e30]:
+          - generic [ref=f1e31]: TIP · The handbrake is a rotation tool, not a stop button. Stab it, then catch it.
+          - generic [ref=f1e32]:
+            - generic [ref=f1e33]:
+              - generic [ref=f1e34]: ↑↓
+              - text: Navigate
+            - generic [ref=f1e35]:
+              - generic [ref=f1e36]: ↵
+              - text: Select
+            - generic [ref=f1e37]:
+              - generic [ref=f1e38]: ESC
+              - text: Back
+        - generic [ref=f1e39]: build 0.1 · procedural everything
+  - generic:
+    - heading "RC RUMBLE" [level=1]
+    - generic: RADIO CONTROLLED MAYHEM
+    - generic: ready

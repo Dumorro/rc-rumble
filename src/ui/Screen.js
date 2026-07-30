@@ -172,8 +172,19 @@ export class MenuList {
     this.vertical = opts.vertical !== false;
     this.wrap = opts.wrap !== false;
     this.onFocus = opts.onFocus ?? null;
-    this.el = el('.rcr-menu', { role: 'menu' });
+    /** Screens with several focus zones park a list by setting this false. */
+    this.active = opts.active !== false;
+    this.el = el(`.rcr-menu${this.vertical ? '' : '.is-row'}`, { role: 'menu' });
     this.setItems(items);
+  }
+
+  /** Show / hide the focus marker without losing the focused index. */
+  setActive(v) {
+    const next = !!v;
+    if (this.active === next) return this;
+    this.active = next;
+    this.refresh();
+    return this;
   }
 
   setItems(items) {
@@ -254,7 +265,7 @@ export class MenuList {
     const n = this.items.length;
     if (n === 0) return;
     this.index = clamp(i, 0, n - 1);
-    for (let k = 0; k < n; k++) setClass(this.items[k].el, 'is-focus', k === this.index);
+    for (let k = 0; k < n; k++) setClass(this.items[k].el, 'is-focus', this.active && k === this.index);
     if (!silent) this.ui.sound('ui/hover', 0.55);
     this.onFocus?.(this.items[this.index]?.spec, this.index);
   }
@@ -358,7 +369,9 @@ export class MenuList {
         setText(row.val, s.format ? s.format(cur) : `${Math.round(t * 100)}%`);
       }
     }
-    for (let k = 0; k < this.items.length; k++) setClass(this.items[k].el, 'is-focus', k === this.index);
+    for (let k = 0; k < this.items.length; k++) {
+      setClass(this.items[k].el, 'is-focus', this.active && k === this.index);
+    }
   }
 
   /** @returns {boolean} handled */

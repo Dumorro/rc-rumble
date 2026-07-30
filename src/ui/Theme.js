@@ -524,6 +524,9 @@ ${cssVars()}
 .rcr-screen.is-transparent > * { pointer-events: auto; }
 .rcr-screen.enter-from { opacity: 0; }
 .rcr-screen.exit-to { opacity: 0; }
+/* Screens below the top of the stack fade out — a stack is not a collage. */
+.rcr-screen.is-under { opacity: 0; pointer-events: none; }
+.rcr-screen.is-under.keep-under { opacity: .35; filter: blur(3px) saturate(.6); }
 .rcr-screen .scr-body { position: absolute; inset: 0; display: flex; }
 
 /* Backdrop treatments */
@@ -610,6 +613,12 @@ ${cssVars()}
 /* ══════════════════════════════ menu lists ════════════════════════════════ */
 
 .rcr-menu { display: flex; flex-direction: column; gap: 2px; }
+.rcr-menu.is-row { flex-direction: row; gap: 6px; }
+.rcr-menu.is-row .rcr-item { width: auto; padding: 11px 20px; }
+.rcr-menu.is-row .rcr-item.is-focus { transform: translateY(-2px); }
+.rcr-menu.is-row .rcr-item::before { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 2px;
+  transform: scaleX(0); }
+.rcr-menu.is-row .rcr-item.is-focus::before { transform: scaleX(1); }
 
 .rcr-item {
   position: relative; display: flex; align-items: center; gap: 14px;
@@ -695,10 +704,10 @@ ${cssVars()}
 .hud-label { font-size: 9px; letter-spacing: .30em; text-transform: uppercase; color: var(--c-inkFaint); }
 
 /* position block */
-.hud-pos { display: flex; align-items: baseline; gap: 8px; }
-.hud-pos .place { position: relative; display: inline-block; transition: transform var(--d-base) var(--e-snap); }
-.hud-pos.gain .place { animation: rcr-rank-up .55s var(--e-snap); }
-.hud-pos.loss .place { animation: rcr-rank-down .55s var(--e-snap); }
+.hud-pos { display: flex; align-items: flex-end; }
+.hud-pos canvas { transform-origin: 12% 62%; }
+.hud-pos.gain canvas { animation: rcr-rank-up .55s var(--e-snap); }
+.hud-pos.loss canvas { animation: rcr-rank-down .55s var(--e-snap); }
 @keyframes rcr-rank-up   { 0% { transform: translateY(16px) scale(.7); filter: brightness(3); } 100% { transform: none; } }
 @keyframes rcr-rank-down { 0% { transform: translateY(-16px) scale(.7); filter: brightness(.4) saturate(2); } 100% { transform: none; } }
 
@@ -850,9 +859,12 @@ ${cssVars()}
 
 /* ══════════════════════════════ car / track select ════════════════════════ */
 
-.sel-stage { position: absolute; inset: 0; display: flex; flex-direction: column; }
-.sel-top { display: flex; justify-content: space-between; align-items: flex-start; padding: 26px 34px 0; gap: 20px; }
-.sel-bottom { margin-top: auto; padding: 0 34px 26px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; }
+/* The stage is a frame around the live 3D preview: it must not eat the drags
+   that spin the car, so only the panels themselves take pointer events. */
+.sel-stage { position: absolute; inset: 0; display: flex; flex-direction: column; pointer-events: none; }
+.sel-top { display: flex; justify-content: space-between; align-items: flex-start; padding: 26px 34px 0; gap: 20px; pointer-events: none; }
+.sel-bottom { margin-top: auto; padding: 0 34px 26px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; pointer-events: none; }
+.sel-top > *, .sel-bottom > * { pointer-events: auto; }
 
 .stat-row { display: grid; grid-template-columns: 62px 1fr 26px; gap: 10px; align-items: center; margin: 7px 0; }
 .stat-row .k { font-size: 9px; letter-spacing: .26em; text-transform: uppercase; color: var(--c-inkFaint); }

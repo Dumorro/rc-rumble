@@ -74,7 +74,7 @@ export class TrackSelect extends Screen {
         get: () => this.ui.settings.get('reversed'),
         set: (v) => this.ui.settings.set('reversed', v),
       },
-    ].filter(Boolean));
+    ].filter(Boolean), { active: false });
 
     this.settingsPanel = el('.rcr-panel', {
       style: { padding: '10px 8px', minWidth: '270px' },
@@ -98,9 +98,7 @@ export class TrackSelect extends Screen {
     this.actions = new MenuList(this, [
       { label: isChampionship ? 'Start Season' : 'Race', onSelect: () => this.confirm() },
       { label: 'Back', onSelect: () => this.ui.pop() },
-    ], { vertical: false, wrap: false });
-    this.actions.el.style.flexDirection = 'row';
-    this.actions.el.style.gap = '6px';
+    ], { vertical: false, wrap: false, active: false });
 
     root.appendChild(el('div', {
       style: {
@@ -231,9 +229,8 @@ export class TrackSelect extends Screen {
       setClass(this.cards[k].el, 'is-focus', k === this.index && this.focusZone === 0);
     }
     setStyle(this.settingsPanel, 'borderColor', this.focusZone === 1 ? C.panelEdgeHot : C.panelEdge);
-    for (let i = 0; i < this.actions.items.length; i++) {
-      setClass(this.actions.items[i].el, 'is-focus', this.focusZone === 2 && i === this.actions.index);
-    }
+    this.settings.setActive(this.focusZone === 1);
+    this.actions.setActive(this.focusZone === 2);
     this.settings.refresh();
   }
 

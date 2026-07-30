@@ -66,10 +66,10 @@ export class Speedometer {
     const cx = s * 0.5;
     const cy = s * 0.5;
     const rOuter = s * 0.475;
-    const rDial = s * 0.385;
-    const rTickOut = s * 0.355;
-    const rTickIn = s * 0.300;
-    const rMinorIn = s * 0.325;
+    const rDial = s * 0.400;
+    const rTickOut = s * 0.386;
+    const rTickIn = s * 0.336;
+    const rMinorIn = s * 0.358;
 
     // ── glass body ──
     const body = ctx.createRadialGradient(cx - s * 0.13, cy - s * 0.18, s * 0.03, cx, cy, rOuter);
@@ -133,14 +133,17 @@ export class Speedometer {
     ctx.stroke();
 
     // ── numerals ──
-    const numSize = s * 0.082;
-    for (let v = 0; v <= this.maxSpeed + 0.001; v += majorStep) {
+    // Label every other major when the dial would otherwise crowd: eight
+    // numbers over a 265° sweep at this diameter simply do not fit.
+    const labelStep = (this.maxSpeed / majorStep) > 6 ? majorStep * 2 : majorStep;
+    const numSize = s * 0.070;
+    for (let v = 0; v <= this.maxSpeed + 0.001; v += labelStep) {
       const t = v / this.maxSpeed;
       const a = A0 + SWEEP * t;
-      const r = rTickIn - numSize * 0.72;
+      const r = rTickIn - numSize * 0.62;
       const x = cx + Math.cos(a) * r;
       const y = cy + Math.sin(a) * r;
-      drawDisplay(ctx, String(Math.round(v)), x, y + numSize * 0.5, {
+      drawDisplay(ctx, String(Math.round(v)), x, y + numSize * 0.46, {
         size: numSize,
         tracking: 0.02,
         weight: 0.17,
@@ -149,17 +152,17 @@ export class Speedometer {
       });
     }
 
-    // Unit label
-    drawDisplay(ctx, 'KM/H', cx, cy + s * 0.395, {
-      size: s * 0.058, tracking: 0.24, weight: 0.16, align: 'center',
+    // Unit label, tucked into the empty wedge under the readout.
+    drawDisplay(ctx, 'KM/H', cx, cy + s * 0.408, {
+      size: s * 0.052, tracking: 0.26, weight: 0.17, align: 'center',
       fill: 'rgba(163,180,208,0.55)',
     });
 
-    // Boost bar track (drawn static, filled dynamically)
-    const bw = s * 0.40;
-    const bh = s * 0.032;
+    // Boost bar track, just under the hub (drawn static, filled dynamically).
+    const bw = s * 0.34;
+    const bh = s * 0.028;
     ctx.fillStyle = 'rgba(255,255,255,0.06)';
-    roundRect(ctx, cx - bw / 2, cy + s * 0.215, bw, bh, bh * 0.5);
+    roundRect(ctx, cx - bw / 2, cy + s * 0.082, bw, bh, bh * 0.5);
     ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.08)';
     ctx.lineWidth = 1;
@@ -219,22 +222,22 @@ export class Speedometer {
       ctx.shadowBlur = 0;
     }
 
-    // ── swept speed arc ──
+    // ── swept speed arc, hugging the inside of the tick ring ──
     if (this.needle > 0.004) {
       const hot = this.needle > 0.86;
-      ctx.strokeStyle = hot ? withAlpha('#ff6a5a', 0.85) : withAlpha(C.cyan, 0.55);
-      ctx.lineWidth = s * 0.020;
+      ctx.strokeStyle = hot ? withAlpha('#ff6a5a', 0.85) : withAlpha(C.cyan, 0.50);
+      ctx.lineWidth = s * 0.014;
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.arc(cx, cy, s * 0.300 - s * 0.020, A0, A0 + SWEEP * this.needle);
+      ctx.arc(cx, cy, rDial - s * 0.005, A0, A0 + SWEEP * this.needle);
       ctx.stroke();
     }
 
     // ── boost bar ──
-    const bw = s * 0.40;
-    const bh = s * 0.032;
+    const bw = s * 0.34;
+    const bh = s * 0.028;
     const bx = cx - bw / 2;
-    const by = cy + s * 0.215;
+    const by = cy + s * 0.082;
     if (this.boostSmooth > 0.002) {
       const g = ctx.createLinearGradient(bx, 0, bx + bw, 0);
       g.addColorStop(0, '#ffcf5a');
@@ -245,16 +248,13 @@ export class Speedometer {
       roundRect(ctx, bx, by, Math.max(bh, bw * Math.min(1, this.boostSmooth)), bh, bh * 0.5);
       ctx.fill();
       ctx.shadowBlur = 0;
-      drawDisplay(ctx, 'NITRO', cx, by - s * 0.016, {
-        size: s * 0.05, tracking: 0.22, weight: 0.17, align: 'center', fill: '#ffcf5a',
-      });
     }
 
     // ── needle ──
     const a = A0 + SWEEP * this.needle;
-    const nLen = s * 0.335;
-    const nBack = s * 0.075;
-    const halfW = s * 0.020;
+    const nLen = s * 0.360;
+    const nBack = s * 0.070;
+    const halfW = s * 0.018;
     const cos = Math.cos(a), sin = Math.sin(a);
     const px = -sin, py = cos;
     const tipX = cx + cos * nLen, tipY = cy + sin * nLen;
@@ -284,48 +284,55 @@ export class Speedometer {
     ctx.restore();
 
     // Hub
-    const hub = ctx.createRadialGradient(cx - s * 0.008, cy - s * 0.010, s * 0.004, cx, cy, s * 0.052);
+    const hub = ctx.createRadialGradient(cx - s * 0.008, cy - s * 0.010, s * 0.004, cx, cy, s * 0.048);
     hub.addColorStop(0, '#5d6c85');
     hub.addColorStop(0.6, '#1d2635');
     hub.addColorStop(1, '#080c14');
     ctx.fillStyle = hub;
     ctx.beginPath();
-    ctx.arc(cx, cy, s * 0.052, 0, Math.PI * 2);
+    ctx.arc(cx, cy, s * 0.048, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = withAlpha(needleCol, 0.55);
     ctx.lineWidth = Math.max(1, s * 0.005);
     ctx.stroke();
 
-    // ── digital readout ──
+    // ── digital readout, in the empty wedge at the bottom of the sweep ──
     const speedTxt = String(Math.max(0, Math.round(st.kmh ?? 0)));
-    drawDisplay(ctx, speedTxt, cx, cy + s * 0.175, {
-      size: s * 0.175,
+    drawDisplay(ctx, speedTxt, cx, cy + s * 0.330, {
+      size: s * 0.150,
       tracking: 0.03,
       weight: 0.155,
       slant: 0.10,
       align: 'center',
       fill: '#ffffff',
       glow: this.needle > 0.86 ? 'rgba(255,90,74,0.75)' : 'rgba(84,220,255,0.55)',
-      glowBlur: s * 0.11,
+      glowBlur: s * 0.10,
     });
 
-    // ── gear window ──
+    // ── gear window, above the hub ──
     const gearTxt = gear === -1 ? 'R' : (gear === 0 ? 'N' : String(gear));
-    const gy = cy - s * 0.125;
-    ctx.fillStyle = 'rgba(4,8,15,0.65)';
-    roundRect(ctx, cx - s * 0.062, gy - s * 0.085, s * 0.124, s * 0.115, s * 0.018);
+    const gy = cy - s * 0.150;
+    ctx.fillStyle = 'rgba(4,8,15,0.68)';
+    roundRect(ctx, cx - s * 0.058, gy - s * 0.078, s * 0.116, s * 0.108, s * 0.016);
     ctx.fill();
     ctx.strokeStyle = st.limiter
       ? 'rgba(255,79,98,0.75)'
       : withAlpha(C.cyan, 0.22 + this._shiftFlash * 0.6);
     ctx.lineWidth = Math.max(1, s * 0.005);
     ctx.stroke();
-    drawDisplay(ctx, gearTxt, cx, gy + s * 0.011, {
-      size: s * 0.082, tracking: 0.02, weight: 0.19, align: 'center', slant: 0.08,
+    drawDisplay(ctx, gearTxt, cx, gy + s * 0.008, {
+      size: s * 0.076, tracking: 0.02, weight: 0.19, align: 'center', slant: 0.08,
       fill: st.limiter ? '#ff8b7a' : mix('#dce8ff', '#ffffff', this._shiftFlash),
       glow: this._shiftFlash > 0.02 ? withAlpha(C.cyan, this._shiftFlash) : null,
       glowBlur: s * 0.08,
     });
+
+    // NITRO tag only while there is boost to show, so the dial stays quiet.
+    if (this.boostSmooth > 0.002) {
+      drawDisplay(ctx, 'NITRO', cx, cy + s * 0.163, {
+        size: s * 0.042, tracking: 0.26, weight: 0.19, align: 'center', fill: '#ffcf5a',
+      });
+    }
   }
 }
 

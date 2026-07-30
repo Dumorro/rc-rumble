@@ -135,10 +135,7 @@ export class CarSelect extends Screen {
     this.actions = new MenuList(this, [
       { label: 'Confirm', hint: 'Pick a track', onSelect: () => this.confirm() },
       { label: 'Back', hint: 'Main menu', onSelect: () => this.ui.pop() },
-    ], { vertical: false, wrap: false });
-    this.actions.el.style.display = 'flex';
-    this.actions.el.style.flexDirection = 'row';
-    this.actions.el.style.gap = '6px';
+    ], { vertical: false, wrap: false, active: false });
 
     root.appendChild(this.stage);
     root.appendChild(el('.sel-stage', null,

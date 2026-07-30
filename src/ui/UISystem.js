@@ -83,6 +83,7 @@ export class UISystem {
     this._navTimer = 0;
     this._navDir = 0;
     this._padPrev = 0;
+    this._inputBlocked = false;
     this._stateBeforePause = GameState.RACING;
     this._loadingRequested = false;
     this._raceRequestId = 0;
@@ -311,9 +312,23 @@ export class UISystem {
     setClass(this.screenLayer, 'is-open', modal);
     this.screenLayer.style.pointerEvents = modal ? 'auto' : 'none';
 
-    // Hand the keyboard to the UI while a menu is up.
+    // Only the top screen is live; everything under it fades out (the pause
+    // menu keeps a blurred ghost of what it covers).
+    for (let i = 0; i < this.stack.length; i++) {
+      const s = this.stack[i];
+      if (!s.el) continue;
+      const under = i < this.stack.length - 1;
+      setClass(s.el, 'is-under', under);
+      setClass(s.el, 'keep-under', under && s.name === Pause.id);
+    }
+
+    // Hand the keyboard to the UI while a menu is up. Only touch Input when the
+    // blocked state actually flips: `setEnabled(false)` clears held keys, and
+    // doing that on every state change would drop a throttle held through the
+    // countdown the instant the lights go out.
     const input = this.game?.input;
-    if (input) {
+    if (input && this._inputBlocked !== modal) {
+      this._inputBlocked = modal;
       if (modal) input.setEnabled(false);
       else { input.setEnabled(false); input.setEnabled(true); }   // also clears stuck keys
     }

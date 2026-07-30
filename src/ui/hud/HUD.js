@@ -18,7 +18,7 @@
  */
 
 import { el, clear, setText, setClass, setStyle, formatTime, formatDelta, ordinalParts, clamp, clamp01 } from '../Dom.js';
-import { THEME, withAlpha, fitCanvas, drawDisplay, setDisplayText, displayTextCanvas } from '../Theme.js';
+import { THEME, withAlpha, fitCanvas, drawDisplay, measureDisplay, setDisplayText, displayTextCanvas } from '../Theme.js';
 import { Speedometer } from './Speedo.js';
 import { Minimap } from './Minimap.js';
 import { PickupSlot } from './PickupSlot.js';
@@ -99,22 +99,12 @@ export class HUD {
       this.vig.oiled, this.vig.soaked, this.vig.damage, this.blind);
 
     // ── top-left: position + ladder ──
-    this.placeCanvas = displayTextCanvas('1', {
-      size: 62, tracking: 0.02, weight: 0.15, slant: 0.16,
-      fill: '#ffffff', glow: withAlpha(C.amber, 0.5), glowBlur: 26, pad: 12,
-    });
-    this.placeSuffix = el('span', {
-      style: {
-        fontSize: '15px', fontWeight: '900', letterSpacing: '.10em',
-        color: C.amber, marginLeft: '-4px', marginBottom: '10px',
-      },
-      text: 'ST',
-    });
-    this.placeTotal = el('span', {
-      style: { fontSize: '13px', color: C.inkFaint, letterSpacing: '.16em', marginBottom: '11px' },
-      text: '/ 8',
-    });
-    this.posBlock = el('.hud-pos', null, this.placeCanvas, this.placeSuffix, this.placeTotal);
+    // The place, its ordinal suffix and the field size share one canvas so the
+    // three sit on exactly one baseline at any size — DOM baseline alignment
+    // against a padded canvas never quite lands.
+    this.placeCanvas = document.createElement('canvas');
+    this.placeCanvas.className = 'hud-place';
+    this.posBlock = el('.hud-pos', null, this.placeCanvas);
     this.ladder = el('.hud-ladder');
     root.appendChild(el('.corner.tl', null, this.posBlock, this.ladder));
 
@@ -382,10 +372,8 @@ export class HUD {
     const pickSize = clamp(m * (compact ? 0.155 : 0.115), 58, 100);
     this.pickup.resize(pickSize);
 
-    setDisplayText(this.placeCanvas, this._placeText(), {
-      size: clamp(m * 0.085, 34, 66), tracking: 0.02, weight: 0.15, slant: 0.16,
-      fill: '#ffffff', glow: withAlpha(C.amber, 0.5), glowBlur: 26, pad: 12,
-    });
+    this._placeSize = clamp(m * 0.088, 32, 68);
+    this._drawPlace();
     setDisplayText(this.lapCanvas, this._lapText(), {
       size: clamp(m * 0.030, 15, 24), tracking: 0.14, weight: 0.16, slant: 0.12,
       fill: C.ink, glow: withAlpha(C.cyan, 0.35), glowBlur: 14, pad: 8,
@@ -442,12 +430,7 @@ export class HUD {
     if (hud.place !== this._place || hud.carCount !== this._carCount) {
       this._place = hud.place;
       this._carCount = hud.carCount;
-      const p = ordinalParts(hud.place);
-      setDisplayText(this.placeCanvas, p.num, {
-        ...(this.placeCanvas._rcrText?.opts ?? {}),
-      });
-      setText(this.placeSuffix, p.suf);
-      setText(this.placeTotal, `/ ${hud.carCount || 1}`);
+      this._drawPlace();
     }
 
     // ── laps ──
@@ -476,8 +459,48 @@ export class HUD {
 
   // ─────────────────────────────────────────────────────────── sub-updates
 
-  _placeText() {
-    return ordinalParts(this._place || 1).num;
+  /** Big place numeral + ordinal suffix + field size, all on one baseline. */
+  _drawPlace() {
+    const size = this._placeSize || 52;
+    const p = ordinalParts(this._place || 1);
+    const total = this._carCount || this.game?.cars?.length || 8;
+
+    const sufSize = size * 0.30;
+    const totSize = size * 0.22;
+    const numW = measureDisplay(p.num, size, 0.02);
+    const sufW = measureDisplay(p.suf, sufSize, 0.10);
+    const totTxt = `/${total}`;
+    const totW = measureDisplay(totTxt, totSize, 0.16);
+
+    const pad = Math.ceil(size * 0.26);
+    const gap = size * 0.09;
+    const w = Math.ceil(pad * 2 + numW + gap + sufW + gap * 1.8 + totW);
+    const h = Math.ceil(size * 1.14 + pad * 1.4);
+    this.placeCanvas.style.width = `${w}px`;
+    this.placeCanvas.style.height = `${h}px`;
+    const ctx = fitCanvas(this.placeCanvas, w, h);
+    if (!ctx) return;
+    ctx.clearRect(0, 0, w, h);
+
+    const baseline = h - pad * 0.9;
+    let x = pad;
+    const hot = (this._place || 9) <= 3;
+    x += drawDisplay(ctx, p.num, x, baseline, {
+      size, tracking: 0.02, weight: 0.15, slant: 0.16,
+      fill: '#ffffff',
+      glow: withAlpha(hot ? C.amber : C.cyan, 0.55),
+      glowBlur: size * 0.42,
+    });
+    x += gap;
+    x += drawDisplay(ctx, p.suf, x, baseline, {
+      size: sufSize, tracking: 0.10, weight: 0.19, slant: 0.16,
+      fill: hot ? C.amber : C.cyan,
+    });
+    x += gap * 1.8;
+    drawDisplay(ctx, totTxt, x, baseline, {
+      size: totSize, tracking: 0.16, weight: 0.20, slant: 0.16,
+      fill: withAlpha(C.inkFaint, 0.85),
+    });
   }
 
   _lapText() {

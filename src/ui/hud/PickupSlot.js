@@ -72,20 +72,19 @@ export class PickupSlot {
     const r = s * 0.44;
     const accent = armed || rolling ? colorFor(rolling ? REEL_ORDER[Math.floor(this._reelPos) % REEL_ORDER.length] : id) : C.inkFaint;
 
-    // ── frame ──
-    ctx.save();
+    // ── frame: an upright hex-cut plate (a rotated square would fight the
+    //    diamond pickup icon it contains) ──
     const breathe = armed ? 0.5 + 0.5 * Math.sin(this._armPulse) : 0.35 + 0.2 * Math.sin(this._emptyT);
-    ctx.translate(cx, cy);
-    ctx.rotate(Math.PI * 0.25);
-    const half = r * 0.80;
-    const plate = ctx.createLinearGradient(-half, -half, half, half);
+    const half = r * 0.95;
+    ctx.save();
+    const plate = ctx.createLinearGradient(cx - half, cy - half, cx + half, cy + half);
     plate.addColorStop(0, 'rgba(24,38,60,0.80)');
-    plate.addColorStop(1, 'rgba(6,11,20,0.86)');
+    plate.addColorStop(1, 'rgba(6,11,20,0.88)');
     ctx.fillStyle = plate;
-    roundRectPath(ctx, -half, -half, half * 2, half * 2, s * 0.10);
+    cutRectPath(ctx, cx - half, cy - half, half * 2, half * 2, s * 0.16);
     ctx.fill();
-    ctx.strokeStyle = withAlpha(accent, 0.32 + breathe * (armed ? 0.55 : 0.22));
-    ctx.lineWidth = Math.max(1.4, s * 0.022);
+    ctx.strokeStyle = withAlpha(accent, 0.30 + breathe * (armed ? 0.58 : 0.20));
+    ctx.lineWidth = Math.max(1.4, s * 0.024);
     if (armed) {
       ctx.shadowColor = withAlpha(accent, 0.55 * breathe);
       ctx.shadowBlur = s * 0.20;
@@ -188,14 +187,18 @@ export class PickupSlot {
   }
 }
 
-function roundRectPath(ctx, x, y, w, h, r) {
-  const rr = Math.min(r, w * 0.5, h * 0.5);
+/** A rectangle with its corners chamfered — matches the display typeface. */
+function cutRectPath(ctx, x, y, w, h, c) {
+  const cc = Math.min(c, w * 0.45, h * 0.45);
   ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.moveTo(x + cc, y);
+  ctx.lineTo(x + w - cc, y);
+  ctx.lineTo(x + w, y + cc);
+  ctx.lineTo(x + w, y + h - cc);
+  ctx.lineTo(x + w - cc, y + h);
+  ctx.lineTo(x + cc, y + h);
+  ctx.lineTo(x, y + h - cc);
+  ctx.lineTo(x, y + cc);
   ctx.closePath();
 }
 

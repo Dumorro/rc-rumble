@@ -1,0 +1,49 @@
+- generic [active] [ref=f4e1]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic: Lap
+              - generic: Last
+              - generic: Best
+              - generic: Race
+      - generic [ref=f4e5]:
+        - generic [ref=f4e7]:
+          - generic [ref=f4e8]:
+            - generic [ref=f4e9]: Radio Controlled Mayhem
+            - generic [ref=f4e12]: 1:10 scale · full contact
+          - menu [ref=f4e14]:
+            - button "Race Single race" [ref=f4e15] [cursor=pointer]:
+              - generic [ref=f4e16]: Race
+              - generic [ref=f4e17]: Single race
+            - button "Time Trial Alone against the clock" [ref=f4e18] [cursor=pointer]:
+              - generic [ref=f4e19]: Time Trial
+              - generic [ref=f4e20]: Alone against the clock
+            - button "Championship Every track, points scored" [ref=f4e21] [cursor=pointer]:
+              - generic [ref=f4e22]: Championship
+              - generic [ref=f4e23]: Every track, points scored
+            - button "Options Video · audio · camera" [ref=f4e24] [cursor=pointer]:
+              - generic [ref=f4e25]: Options
+              - generic [ref=f4e26]: Video · audio · camera
+            - button "Controls Keyboard · gamepad" [ref=f4e27] [cursor=pointer]:
+              - generic [ref=f4e28]: Controls
+              - generic [ref=f4e29]: Keyboard · gamepad
+        - generic [ref=f4e30]:
+          - generic [ref=f4e31]: "TIP · A pickup rolls by race position: the leader gets defence, the back gets equalisers."
+          - generic [ref=f4e32]:
+            - generic [ref=f4e33]:
+              - generic [ref=f4e34]: ↑↓
+              - text: Navigate
+            - generic [ref=f4e35]:
+              - generic [ref=f4e36]: ↵
+              - text: Select
+            - generic [ref=f4e37]:
+              - generic [ref=f4e38]: ESC
+              - text: Back
+        - generic [ref=f4e39]: build 0.1 · procedural everything
+  - generic:
+    - heading "RC RUMBLE" [level=1]
+    - generic: RADIO CONTROLLED MAYHEM
+    - generic: ready

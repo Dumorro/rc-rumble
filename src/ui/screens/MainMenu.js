@@ -40,6 +40,7 @@ export class MainMenu extends Screen {
     this.title.style.maxWidth = '100%';
     this.accent = document.createElement('canvas');
     this.accent.style.display = 'block';
+    this.accent.style.margin = '2px 0 6px';
 
     this.titleWrap = el('.rcr-title-wrap', {
       style: { transition: 'transform .5s cubic-bezier(.16,1,.3,1)' },
@@ -68,13 +69,15 @@ export class MainMenu extends Screen {
     ]);
 
     this.panel = el('.rcr-panel.rcr-ticks', {
-      style: { padding: '18px 14px', minWidth: 'min(360px, 84vw)' },
+      style: {
+        padding: '14px 12px', width: 'min(430px, 88vw)', alignSelf: 'flex-start',
+      },
     }, this.menu.el);
 
     this.body = el('div', {
       style: {
         position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-        justifyContent: 'center', gap: 'clamp(16px, 4vh, 40px)',
+        alignItems: 'flex-start', justifyContent: 'center', gap: 'clamp(14px, 3.4vh, 34px)',
         padding: 'clamp(24px, 6vw, 96px)',
       },
     }, this.titleWrap, this.panel);
@@ -90,7 +93,7 @@ export class MainMenu extends Screen {
     root.appendChild(el('div', {
       style: {
         position: 'absolute', left: 'clamp(24px, 6vw, 96px)', right: 'clamp(24px, 6vw, 96px)',
-        bottom: 'calc(var(--safe-b) + 20px)', display: 'flex', gap: '18px',
+        bottom: 'calc(var(--safe-b) + 34px)', display: 'flex', gap: '18px',
         justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap',
       },
     },
@@ -98,7 +101,10 @@ export class MainMenu extends Screen {
     this.legend([
       ['↑↓', 'Navigate'], ['↵', 'Select'], ['ESC', 'Back'],
     ])));
-    root.appendChild(el('.rcr-version', { text: 'build 0.1 · procedural everything' }));
+    root.appendChild(el('.rcr-version', {
+      style: { right: 'auto', left: 'clamp(24px, 6vw, 96px)' },
+      text: 'build 0.1 · procedural everything',
+    }));
 
     return root;
   }

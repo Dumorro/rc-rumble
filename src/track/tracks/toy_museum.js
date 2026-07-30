@@ -354,8 +354,21 @@ function buildTable(b) {
 
   // The ramp up onto it: the spline already climbs from node 17 to node 18, so
   // the deck has to meet the floor cleanly. A tapered plywood apron does it.
+  // The ramp MUST top out at the deck's south edge (T.z0), not past it.
+  //
+  // It used to run to z = -1.0 while the deck starts at z = -6.5, so the last
+  // 5.5 m of ramp was buried under the deck and never driven on. At the deck
+  // edge the ramp had only climbed to 0.337 m of the 0.70 m deck height, which
+  // left a 0.363 m step presenting a 43.8 deg face straight across the racing
+  // line. That needs g·sin(43.8°) = 13.57 m/s² to climb; the fastest car in the
+  // game has accel 13.37 and six of eight have 9.1–11. Measured: every car, at
+  // every launch speed up to 14 m/s, stopped dead at z ≈ -6.65. The whole field
+  // parked there ~4.5 s into the lap.
+  //
+  // Ending at T.z0 gives 0.70 m over 5.1 m = 7.8°, needing 2.67 m/s² — clearable
+  // by every car — and keeps the table exactly where the author placed it.
   const rampFrom = [43, 0, -11.6];
-  const rampTo = [43, T.y, -1.0];
+  const rampTo = [43, T.y, T.z0];
   b.ramp({
     from: rampFrom, to: rampTo, width: 3.4, thickness: 0.10,
     material: 'wood/plywood_varnish', surfaceId: SurfaceId.WOOD,

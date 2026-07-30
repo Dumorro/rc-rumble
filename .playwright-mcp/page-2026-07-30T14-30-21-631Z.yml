@@ -1,0 +1,49 @@
+- generic [active] [ref=f5e1]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic: ST
+            - generic: / 8
+        - generic:
+          - generic:
+            - generic:
+              - generic: Lap
+              - generic: Last
+              - generic: Best
+              - generic: Race
+      - generic [ref=f5e5]:
+        - generic [ref=f5e7]:
+          - generic [ref=f5e8]:
+            - generic [ref=f5e9]: Radio Controlled Mayhem
+            - generic [ref=f5e12]: 1:10 scale · full contact
+          - menu [ref=f5e14]:
+            - button "Race Single race" [ref=f5e15] [cursor=pointer]:
+              - generic [ref=f5e16]: Race
+              - generic [ref=f5e17]: Single race
+            - button "Time Trial Alone against the clock" [ref=f5e18] [cursor=pointer]:
+              - generic [ref=f5e19]: Time Trial
+              - generic [ref=f5e20]: Alone against the clock
+            - button "Championship Every track, points scored" [ref=f5e21] [cursor=pointer]:
+              - generic [ref=f5e22]: Championship
+              - generic [ref=f5e23]: Every track, points scored
+            - button "Options Video · audio · camera" [ref=f5e24] [cursor=pointer]:
+              - generic [ref=f5e25]: Options
+              - generic [ref=f5e26]: Video · audio · camera
+            - button "Controls Keyboard · gamepad" [ref=f5e27] [cursor=pointer]:
+              - generic [ref=f5e28]: Controls
+              - generic [ref=f5e29]: Keyboard · gamepad
+        - generic [ref=f5e30]:
+          - generic [ref=f5e31]: "TIP · A pickup rolls by race position: the leader gets defence, the back gets equalisers."
+          - generic [ref=f5e32]:
+            - generic [ref=f5e33]:
+              - generic [ref=f5e34]: ↑↓
+              - text: Navigate
+            - generic [ref=f5e35]:
+              - generic [ref=f5e36]: ↵
+              - text: Select
+            - generic [ref=f5e37]:
+              - generic [ref=f5e38]: ESC
+              - text: Back
+        - generic [ref=f5e39]: build 0.1 · procedural everything
