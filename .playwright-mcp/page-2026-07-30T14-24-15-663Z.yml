@@ -1,0 +1,49 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic: ST
+            - generic: / 8
+        - generic:
+          - generic:
+            - generic:
+              - generic: Lap
+              - generic: Last
+              - generic: Best
+              - generic: Race
+      - generic [ref=e5]:
+        - generic [ref=e7]:
+          - generic [ref=e8]:
+            - generic [ref=e9]: Radio Controlled Mayhem
+            - generic [ref=e12]: 1:10 scale · full contact
+          - menu [ref=e14]:
+            - button "Race Single race" [ref=e15] [cursor=pointer]:
+              - generic [ref=e16]: Race
+              - generic [ref=e17]: Single race
+            - button "Time Trial Alone against the clock" [ref=e18] [cursor=pointer]:
+              - generic [ref=e19]: Time Trial
+              - generic [ref=e20]: Alone against the clock
+            - button "Championship Every track, points scored" [ref=e21] [cursor=pointer]:
+              - generic [ref=e22]: Championship
+              - generic [ref=e23]: Every track, points scored
+            - button "Options Video · audio · camera" [ref=e24] [cursor=pointer]:
+              - generic [ref=e25]: Options
+              - generic [ref=e26]: Video · audio · camera
+            - button "Controls Keyboard · gamepad" [ref=e27] [cursor=pointer]:
+              - generic [ref=e28]: Controls
+              - generic [ref=e29]: Keyboard · gamepad
+        - generic [ref=e30]:
+          - generic [ref=e31]: TIP · Tap R to respawn at the last checkpoint. It costs about a second — a wall costs more.
+          - generic [ref=e32]:
+            - generic [ref=e33]:
+              - generic [ref=e34]: ↑↓
+              - text: Navigate
+            - generic [ref=e35]:
+              - generic [ref=e36]: ↵
+              - text: Select
+            - generic [ref=e37]:
+              - generic [ref=e38]: ESC
+              - text: Back
+        - generic [ref=e39]: build 0.1 · procedural everything

@@ -33,6 +33,27 @@ export const CONFIG = {
     laps: qNum('laps', 3),
     opponents: qNum('opponents', 7),
     skipMenu: qBool('skipmenu', false),
+
+    /**
+     * Which startup keys were given EXPLICITLY in the URL.
+     *
+     * An explicit `?car=phantom` must beat a persisted `settings.lastCar` from a
+     * previous session — otherwise the documented debug URLs silently do nothing
+     * and you spend an afternoon wondering why you keep getting the default car.
+     * Consumers that merge saved settings with startup config should check this
+     * before falling back:
+     *
+     *     carId: CONFIG.startup.fromUrl.car
+     *       ? CONFIG.startup.car
+     *       : (settings.get('lastCar') ?? CONFIG.startup.car)
+     */
+    fromUrl: {
+      track: qs.has('track'),
+      car: qs.has('car'),
+      laps: qs.has('laps'),
+      opponents: qs.has('opponents'),
+      skipMenu: qs.has('skipmenu'),
+    },
   },
 
   physics: {
