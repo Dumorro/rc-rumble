@@ -218,11 +218,19 @@ export class Minimap {
   }
 }
 
+/**
+ * Livery colour as a CSS string, memoised on the car — this runs once per car
+ * per frame and template-literal churn in a per-frame path is exactly what the
+ * no-allocation rule is about.
+ */
 function liveryColor(car) {
-  const n = car?.livery?.primary ?? car?.def?.colorPrimary;
-  if (typeof n === 'number') return `#${(n >>> 0 & 0xffffff).toString(16).padStart(6, '0')}`;
-  if (typeof n === 'string') return n;
-  return C.rival;
+  if (car?._uiLiveryHex) return car._uiLiveryHex;
+  const n = car?.colorPrimary ?? car?.def?.colorPrimary;
+  let hex = C.rival;
+  if (typeof n === 'number') hex = `#${(n >>> 0 & 0xffffff).toString(16).padStart(6, '0')}`;
+  else if (typeof n === 'string') hex = n;
+  if (car) car._uiLiveryHex = hex;
+  return hex;
 }
 
 function rrect(ctx, x, y, w, h, r) {

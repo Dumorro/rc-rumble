@@ -1,0 +1,158 @@
+- generic [ref=e1]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic: Lap
+              - generic: Last
+              - generic: Best
+              - generic: Race
+      - generic [ref=e4]:
+        - generic:
+          - generic:
+            - generic:
+              - generic: Radio Controlled Mayhem
+              - generic: 1:10 scale · full contact
+            - generic:
+              - menu:
+                - button "Race Single race" [active]:
+                  - generic: Race
+                  - generic: Single race
+                - button "Time Trial Against the clock":
+                  - generic: Time Trial
+                  - generic: Against the clock
+                - button "Championship Full season":
+                  - generic: Championship
+                  - generic: Full season
+                - button "Options Video · audio":
+                  - generic: Options
+                  - generic: Video · audio
+                - button "Controls Key bindings":
+                  - generic: Controls
+                  - generic: Key bindings
+          - generic:
+            - generic: TIP · Lift off before the apex — these cars rotate on the throttle, not the brake.
+            - generic:
+              - generic:
+                - generic: ↑↓
+                - text: Navigate
+              - generic:
+                - generic: ↵
+                - text: Select
+              - generic:
+                - generic: ESC
+                - text: Back
+          - generic: build 0.1 · procedural everything
+        - generic:
+          - generic:
+            - generic:
+              - generic [ref=e44]:
+                - generic [ref=e45]: Step 1 of 2
+                - generic [ref=e47]: Single Race
+              - generic [ref=e49]:
+                - generic [ref=e50]: Livery
+                - generic [ref=e51]:
+                  - button "Stock livery" [ref=e52] [cursor=pointer]
+                  - button "#e23b2c" [ref=e53] [cursor=pointer]
+                  - button "#ff7a18" [ref=e54] [cursor=pointer]
+                  - button "#ffd400" [ref=e55] [cursor=pointer]
+                  - button "#8bc53f" [ref=e56] [cursor=pointer]
+                  - button "#2fa8dd" [ref=e57] [cursor=pointer]
+                  - button "#4de0ff" [ref=e58] [cursor=pointer]
+                  - button "#6a2fbf" [ref=e59] [cursor=pointer]
+                  - button "#d75cff" [ref=e60] [cursor=pointer]
+                  - button "#f2f4f7" [ref=e61] [cursor=pointer]
+                  - button "#14161b" [ref=e62] [cursor=pointer]
+            - generic:
+              - generic [ref=e63]:
+                - generic [ref=e65]:
+                  - generic [ref=e66]: AMATEUR
+                  - generic [ref=e67]: FWD
+                  - generic [ref=e68]: METAL SHELL
+                - generic [ref=e69]: Front-drive panel van. Heavy, tall, understeers — and shrugs off hits.
+                - generic [ref=e71]:
+                  - generic [ref=e72]:
+                    - generic [ref=e73]: Speed
+                    - generic [ref=e76]: "2"
+                  - generic [ref=e77]:
+                    - generic [ref=e78]: Accel
+                    - generic [ref=e81]: "2"
+                  - generic [ref=e82]:
+                    - generic [ref=e83]: Grip
+                    - generic [ref=e86]: "3"
+                  - generic [ref=e87]:
+                    - generic [ref=e88]: Weight
+                    - generic [ref=e91]: "5"
+                - generic [ref=e92]: 109 km/h · 0-top 1.9s · 2.05 kg 60% front · wheelbase 210 mm
+              - generic [ref=e93]:
+                - generic [ref=e94]:
+                  - button "‹" [ref=e95] [cursor=pointer]
+                  - button "›" [ref=e105] [cursor=pointer]
+                  - generic [ref=e106]: 03 / 08
+                - menu [ref=e107]:
+                  - button "Confirm Pick a track" [ref=e108] [cursor=pointer]:
+                    - generic [ref=e109]: Confirm
+                    - generic [ref=e110]: Pick a track
+                  - button "Back Main menu" [ref=e111] [cursor=pointer]:
+                    - generic [ref=e112]: Back
+                    - generic [ref=e113]: Main menu
+                - generic [ref=e114]:
+                  - generic [ref=e115]:
+                    - generic [ref=e116]: ←→
+                    - text: Change car
+                  - generic [ref=e117]:
+                    - generic [ref=e118]: ↑↓
+                    - text: Section
+                  - generic [ref=e119]:
+                    - generic [ref=e120]: ↵
+                    - text: Confirm
+                  - generic [ref=e121]:
+                    - generic [ref=e122]: ESC
+                    - text: Back
+        - generic [ref=e133]:
+          - generic [ref=e134]: Step 2 of 2
+          - generic [ref=e138]:
+            - generic [ref=e141] [cursor=pointer]:
+              - generic [ref=e142]: TOY MUSEUM
+              - generic [ref=e143]:
+                - generic "EASY" [ref=e144]
+                - generic [ref=e150]: —
+                - generic [ref=e151]: 3 LAPS
+                - generic [ref=e152]: INDOOR
+              - generic [ref=e153]: Race across the polished floors of a grand museum. Thread the sauropod, ramp onto the display table and jump the marble stairs — or gamble on the staff corridor behind the curtain.
+            - generic [ref=e156] [cursor=pointer]:
+              - generic [ref=e157]: BACK GARDEN
+              - generic [ref=e158]:
+                - generic "MEDIUM" [ref=e159]
+                - generic [ref=e165]: —
+                - generic [ref=e166]: 3 LAPS
+                - generic [ref=e167]: OUTDOOR
+              - generic [ref=e168]: Gravel paths through a summer garden. Blind crest over the rockery, a run through the greenhouse, a soaked sprinkler arc, and a plank across the pond for anyone brave enough. Finishes with a jump off the deck.
+          - generic [ref=e169]:
+            - generic [ref=e170]:
+              - generic [ref=e171]: TOY MUSEUM
+              - generic [ref=e172]: Race across the polished floors of a grand museum. Thread the sauropod, ramp onto the display table and jump the marble stairs — or gamble on the staff corridor behind the curtain.
+              - generic [ref=e173]: BEST LAP --.--- · BEST RACE --:--.--- · WINS 0/0
+            - menu [ref=e175]:
+              - button "Laps 3" [ref=e176] [cursor=pointer]:
+                - generic [ref=e177]: Laps
+                - generic [ref=e178]: "3"
+              - button "Opponents 7" [ref=e182] [cursor=pointer]:
+                - generic [ref=e183]: Opponents
+                - generic [ref=e184]: "7"
+          - generic [ref=e188]:
+            - generic [ref=e189]:
+              - generic [ref=e190]:
+                - generic [ref=e191]: ←→↑↓
+                - text: Navigate
+              - generic [ref=e192]:
+                - generic [ref=e193]: ↵
+                - text: Race
+              - generic [ref=e194]:
+                - generic [ref=e195]: ESC
+                - text: Back
+            - menu [ref=e196]:
+              - button "Race" [ref=e197] [cursor=pointer]
+              - button "Back" [ref=e199] [cursor=pointer]

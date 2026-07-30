@@ -503,7 +503,9 @@ export class UISystem {
     this.touch?.setActive(false);
     try { await this.game?.unloadRace?.(); } catch (err) { console.warn('[UI] unload failed', err); }
     try { this.game?.setState?.(GameState.MENU); } catch { /* noop */ }
-    this.show(MainMenu.id);
+    // setState already routed us to the title screen; re-showing it here would
+    // tear the freshly mounted DOM down and flash.
+    if (!this.hasScreen(MainMenu.id) || this.stack.length !== 1) this.show(MainMenu.id);
     if (target === 'car') this.push(CarSelect.id, { mode: this.flow.mode });
     else if (target === 'track') {
       this.push(CarSelect.id, { mode: this.flow.mode });
@@ -589,8 +591,9 @@ export class UISystem {
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
 
-    // Global toggles.
-    if (e.code === 'F3' || e.code === 'Backquote') {
+    // Global toggles. The telemetry overlay stays behind CONFIG.debug, per
+    // ARCHITECTURE.md — it is a developer tool, not a player feature.
+    if (CONFIG.debug && (e.code === 'F3' || e.code === 'Backquote')) {
       const on = this.telemetry?.toggle?.();
       this.settings.set('showTelemetry', !!on);
       e.preventDefault();

@@ -182,12 +182,22 @@ export class PickupSlot {
         tracking: 0.09, weight: 0.17, align: 'center', fill: '#ffffff',
         glow: withAlpha(accent, 0.6), glowBlur: s * 0.14,
       });
-      const promptA = 0.55 + 0.45 * Math.sin(this._armPulse * 1.7);
+      const promptA = 0.5 + 0.5 * Math.sin(this._armPulse * 1.7);
       const prompt = `${this.fireKeyLabel} TO FIRE`;
+      const psz = fitSize(prompt, 0.16, s * 0.115, maxW);
+      // A filled pill behind the prompt: amber-on-track-texture is unreadable
+      // on a light floor, and this is the one HUD element that must be obeyed.
+      const pw = measureDisplay(prompt, psz, 0.16) + psz * 1.3;
+      const ph = psz * 1.85;
+      ctx.fillStyle = `rgba(20, 12, 2, ${0.45 + promptA * 0.25})`;
+      cutRectPath(ctx, cx - pw * 0.5, promptY - ph * 0.72, pw, ph, ph * 0.32);
+      ctx.fill();
+      ctx.strokeStyle = withAlpha(C.amber, 0.30 + promptA * 0.45);
+      ctx.lineWidth = 1;
+      ctx.stroke();
       drawDisplay(ctx, prompt, cx, promptY, {
-        size: fitSize(prompt, 0.16, s * 0.105, maxW), tracking: 0.16,
-        weight: 0.19, align: 'center',
-        fill: withAlpha(C.amber, 0.45 + promptA * 0.5),
+        size: psz, tracking: 0.16, weight: 0.19, align: 'center',
+        fill: withAlpha('#ffd88a', 0.75 + promptA * 0.25),
       });
     } else {
       drawDisplay(ctx, 'NO PICKUP', cx, nameY, {

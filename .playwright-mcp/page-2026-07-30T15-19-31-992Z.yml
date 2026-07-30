@@ -1,0 +1,45 @@
+- generic [active] [ref=f21e1]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic: Lap
+              - generic: Last
+              - generic: Best
+              - generic: Race
+      - generic [ref=f21e5]:
+        - generic [ref=f21e7]:
+          - generic [ref=f21e8]:
+            - generic [ref=f21e9]: Radio Controlled Mayhem
+            - generic [ref=f21e12]: 1:10 scale · full contact
+          - menu [ref=f21e14]:
+            - button "Race Single race" [ref=f21e15] [cursor=pointer]:
+              - generic [ref=f21e16]: Race
+              - generic [ref=f21e17]: Single race
+            - button "Time Trial Against the clock" [ref=f21e18] [cursor=pointer]:
+              - generic [ref=f21e19]: Time Trial
+              - generic [ref=f21e20]: Against the clock
+            - button "Championship Full season" [ref=f21e21] [cursor=pointer]:
+              - generic [ref=f21e22]: Championship
+              - generic [ref=f21e23]: Full season
+            - button "Options Video · audio" [ref=f21e24] [cursor=pointer]:
+              - generic [ref=f21e25]: Options
+              - generic [ref=f21e26]: Video · audio
+            - button "Controls Key bindings" [ref=f21e27] [cursor=pointer]:
+              - generic [ref=f21e28]: Controls
+              - generic [ref=f21e29]: Key bindings
+        - generic [ref=f21e30]:
+          - generic [ref=f21e31]: "TIP · A pickup rolls by race position: the leader gets defence, the back gets equalisers."
+          - generic [ref=f21e32]:
+            - generic [ref=f21e33]:
+              - generic [ref=f21e34]: ↑↓
+              - text: Navigate
+            - generic [ref=f21e35]:
+              - generic [ref=f21e36]: ↵
+              - text: Select
+            - generic [ref=f21e37]:
+              - generic [ref=f21e38]: ESC
+              - text: Back
+        - generic [ref=f21e39]: build 0.1 · procedural everything

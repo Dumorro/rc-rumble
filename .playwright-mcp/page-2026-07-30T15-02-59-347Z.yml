@@ -1,0 +1,25 @@
+- generic [active] [ref=f10e1]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic: Lap
+              - generic: "00.000"
+              - generic: Last
+              - generic: "--.---"
+              - generic: Best
+              - generic: "--.---"
+              - generic: Race
+              - generic: 0:00.000
+      - generic:
+        - generic [ref=f10e6]:
+          - button "BRAKE" [ref=f10e7] [cursor=pointer]
+          - button "GAS" [ref=f10e8] [cursor=pointer]
+        - generic:
+          - button "FIRE" [ref=f10e9] [cursor=pointer]
+          - button "HAND" [ref=f10e10] [cursor=pointer]
+          - button "LOOK" [ref=f10e11] [cursor=pointer]
+          - button "RESET" [ref=f10e12] [cursor=pointer]
+          - button "CAM" [ref=f10e13] [cursor=pointer]

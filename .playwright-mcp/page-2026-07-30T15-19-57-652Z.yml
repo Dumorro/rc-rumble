@@ -1,0 +1,45 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic: Lap
+              - generic: Last
+              - generic: Best
+              - generic: Race
+      - generic [ref=e5]:
+        - generic [ref=e7]:
+          - generic [ref=e8]:
+            - generic [ref=e9]: Radio Controlled Mayhem
+            - generic [ref=e12]: 1:10 scale · full contact
+          - menu [ref=e14]:
+            - button "Race Single race" [ref=e15] [cursor=pointer]:
+              - generic [ref=e16]: Race
+              - generic [ref=e17]: Single race
+            - button "Time Trial Against the clock" [ref=e18] [cursor=pointer]:
+              - generic [ref=e19]: Time Trial
+              - generic [ref=e20]: Against the clock
+            - button "Championship Full season" [ref=e21] [cursor=pointer]:
+              - generic [ref=e22]: Championship
+              - generic [ref=e23]: Full season
+            - button "Options Video · audio" [ref=e24] [cursor=pointer]:
+              - generic [ref=e25]: Options
+              - generic [ref=e26]: Video · audio
+            - button "Controls Key bindings" [ref=e27] [cursor=pointer]:
+              - generic [ref=e28]: Controls
+              - generic [ref=e29]: Key bindings
+        - generic [ref=e30]:
+          - generic [ref=e31]: TIP · Lift off before the apex — these cars rotate on the throttle, not the brake.
+          - generic [ref=e32]:
+            - generic [ref=e33]:
+              - generic [ref=e34]: ↑↓
+              - text: Navigate
+            - generic [ref=e35]:
+              - generic [ref=e36]: ↵
+              - text: Select
+            - generic [ref=e37]:
+              - generic [ref=e38]: ESC
+              - text: Back
+        - generic [ref=e39]: build 0.1 · procedural everything

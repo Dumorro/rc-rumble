@@ -215,10 +215,16 @@ export class TrackSelect extends Screen {
   _columns() {
     if (this.cards.length < 2) return 1;
     const a = this.cards[0].el.getBoundingClientRect();
+    // `.track-card.is-focus` lifts the focused card by translateY(-5px) and scales it,
+    // so two cards on the SAME row can differ in `top` by several pixels. Compare row
+    // membership by centre-y against half a card height — a real second row is a whole
+    // card lower, so the tolerance is never ambiguous.
+    const tol = Math.max(8, a.height * 0.5);
+    const aMid = a.top + a.height * 0.5;
     let cols = 1;
     for (let i = 1; i < this.cards.length; i++) {
       const b = this.cards[i].el.getBoundingClientRect();
-      if (Math.abs(b.top - a.top) > 4) break;
+      if (Math.abs((b.top + b.height * 0.5) - aMid) > tol) break;
       cols++;
     }
     return Math.max(1, cols);

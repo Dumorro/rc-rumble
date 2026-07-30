@@ -1,0 +1,113 @@
+- generic [ref=f20e1]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic: Lap
+              - generic: Last
+              - generic: Best
+              - generic: Race
+      - generic [ref=f20e4]:
+        - generic:
+          - generic:
+            - generic:
+              - generic: Radio Controlled Mayhem
+              - generic: 1:10 scale · full contact
+            - generic:
+              - menu:
+                - button "Race Single race" [active]:
+                  - generic: Race
+                  - generic: Single race
+                - button "Time Trial Against the clock":
+                  - generic: Time Trial
+                  - generic: Against the clock
+                - button "Championship Full season":
+                  - generic: Championship
+                  - generic: Full season
+                - button "Options Video · audio":
+                  - generic: Options
+                  - generic: Video · audio
+                - button "Controls Key bindings":
+                  - generic: Controls
+                  - generic: Key bindings
+          - generic:
+            - generic: TIP · Tap R to respawn at the last checkpoint. It costs about a second — a wall costs more.
+            - generic:
+              - generic:
+                - generic: ↑↓
+                - text: Navigate
+              - generic:
+                - generic: ↵
+                - text: Select
+              - generic:
+                - generic: ESC
+                - text: Back
+          - generic: build 0.1 · procedural everything
+        - generic [ref=f20e40]:
+          - generic:
+            - generic:
+              - generic [ref=f20e44]:
+                - generic [ref=f20e45]: Step 1 of 2
+                - generic [ref=f20e47]: Single Race
+              - generic [ref=f20e49]:
+                - generic [ref=f20e50]: Livery
+                - generic [ref=f20e51]:
+                  - button "Stock livery" [ref=f20e52] [cursor=pointer]
+                  - button "#e23b2c" [ref=f20e53] [cursor=pointer]
+                  - button "#ff7a18" [ref=f20e54] [cursor=pointer]
+                  - button "#ffd400" [ref=f20e55] [cursor=pointer]
+                  - button "#8bc53f" [ref=f20e56] [cursor=pointer]
+                  - button "#2fa8dd" [ref=f20e57] [cursor=pointer]
+                  - button "#4de0ff" [ref=f20e58] [cursor=pointer]
+                  - button "#6a2fbf" [ref=f20e59] [cursor=pointer]
+                  - button "#d75cff" [ref=f20e60] [cursor=pointer]
+                  - button "#f2f4f7" [ref=f20e61] [cursor=pointer]
+                  - button "#14161b" [ref=f20e62] [cursor=pointer]
+            - generic:
+              - generic [ref=f20e63]:
+                - generic [ref=f20e65]:
+                  - generic [ref=f20e66]: AMATEUR
+                  - generic [ref=f20e67]: 4WD
+                  - generic [ref=f20e68]: METAL SHELL
+                - generic [ref=f20e69]: "Die-cast saloon. The benchmark: neutral, planted, honest."
+                - generic [ref=f20e71]:
+                  - generic [ref=f20e72]:
+                    - generic [ref=f20e73]: Speed
+                    - generic [ref=f20e76]: "3"
+                  - generic [ref=f20e77]:
+                    - generic [ref=f20e78]: Accel
+                    - generic [ref=f20e81]: "3"
+                  - generic [ref=f20e82]:
+                    - generic [ref=f20e83]: Grip
+                    - generic [ref=f20e86]: "3"
+                  - generic [ref=f20e87]:
+                    - generic [ref=f20e88]: Weight
+                    - generic [ref=f20e91]: "3"
+                - generic [ref=f20e92]: 114 km/h · 0-top 1.7s · 1.62 kg 53% front · wheelbase 202 mm
+              - generic [ref=f20e93]:
+                - generic [ref=f20e94]:
+                  - button "‹" [ref=f20e95] [cursor=pointer]
+                  - button "›" [ref=f20e105] [cursor=pointer]
+                  - generic [ref=f20e106]: 02 / 08
+                - menu [ref=f20e107]:
+                  - button "Confirm Pick a track" [ref=f20e108] [cursor=pointer]:
+                    - generic [ref=f20e109]: Confirm
+                    - generic [ref=f20e110]: Pick a track
+                  - button "Back Main menu" [ref=f20e111] [cursor=pointer]:
+                    - generic [ref=f20e112]: Back
+                    - generic [ref=f20e113]: Main menu
+                - generic [ref=f20e114]:
+                  - generic [ref=f20e115]:
+                    - generic [ref=f20e116]: ←→
+                    - text: Change car
+                  - generic [ref=f20e117]:
+                    - generic [ref=f20e118]: ↑↓
+                    - text: Section
+                  - generic [ref=f20e119]:
+                    - generic [ref=f20e120]: ↵
+                    - text: Confirm
+                  - generic [ref=f20e121]:
+                    - generic [ref=f20e122]: ESC
+                    - text: Back

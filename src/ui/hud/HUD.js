@@ -139,7 +139,9 @@ export class HUD {
     // ── bottom-centre: pickup ──
     this.pickupWrap = el('.hud-pickup-wrap', {
       style: {
-        position: 'absolute', left: '50%', bottom: 'calc(var(--safe-b) + 12px)',
+        position: 'absolute', left: '50%',
+        bottom: 'calc(var(--safe-b) + 16px + var(--touch-lift, 0px))',
+        transition: 'bottom .24s cubic-bezier(.16,1,.3,1)',
         transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center',
         pointerEvents: 'none',
       },
@@ -407,22 +409,27 @@ export class HUD {
     const rpm01 = def?.limiterRpm ? clamp01((car?.rpm ?? 0) / def.limiterRpm)
       : clamp01((car?.rpm ?? 0) / 16000);
     const boost01 = car ? clamp01((car.effects?.boost ?? 0) / 2.4) : 0;
-    this.speedo.draw({
+    // Each canvas widget is isolated: one bad frame in the speedo must not take
+    // the minimap, the pickup slot and every text field down with it.
+    this._safe('speedo', () => this.speedo.draw({
       kmh,
       rpm01,
       gear: car?.gear ?? 0,
       boost01,
       limiter: rpm01 > 0.985,
       drift01: car?.driftFactor ?? 0,
-    }, rawDt);
+    }, rawDt));
 
     // ── minimap ──
     if (this.ui.settings.get('showMinimap')) {
-      this.minimap.draw(game?.cars, car, rawDt);
+      this._safe('minimap', () => this.minimap.draw(game?.cars, car, rawDt));
     }
 
     // ── pickup ──
-    this.pickup.draw(car?.weapon ?? null, rawDt);
+    // The prompt has to name the device you are actually holding; players swap
+    // between keyboard, pad and touch mid-session.
+    this.pickup.fireKeyLabel = this.ui.fireKeyLabel();
+    this._safe('pickup', () => this.pickup.draw(car?.weapon ?? null, rawDt));
 
     if (!hud) return;
 
@@ -458,6 +465,17 @@ export class HUD {
   }
 
   // ─────────────────────────────────────────────────────────── sub-updates
+
+  /** Run a widget draw, logging a failure once and carrying on. */
+  _safe(key, fn) {
+    try { fn(); } catch (err) {
+      this._broke ??= new Set();
+      if (!this._broke.has(key)) {
+        this._broke.add(key);
+        console.error(`[UI] HUD widget "${key}" threw (further errors suppressed):`, err);
+      }
+    }
+  }
 
   /** Big place numeral + ordinal suffix + field size, all on one baseline. */
   _drawPlace() {
@@ -746,9 +764,13 @@ function shortName(name) {
 }
 
 function liveryHex(car) {
+  if (car?._uiLiveryHex) return car._uiLiveryHex;
   const n = car?.colorPrimary ?? car?.def?.colorPrimary;
-  if (typeof n === 'number') return `#${(n >>> 0 & 0xffffff).toString(16).padStart(6, '0')}`;
-  return C.rival;
+  const hex = typeof n === 'number'
+    ? `#${(n >>> 0 & 0xffffff).toString(16).padStart(6, '0')}`
+    : C.rival;
+  if (car) car._uiLiveryHex = hex;
+  return hex;
 }
 
 function safeGap(race, car) {

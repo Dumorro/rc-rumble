@@ -4,6 +4,8 @@
  *
  *   1. Runs every `src/**\/__selftest__.{mjs,js}` suite, SEQUENTIALLY.
  *   2. Lints the source tree for the project's hard rules.
+ *   3. Checks that every field in the ARCHITECTURE.md data contracts is
+ *      actually WIRED UP — see `runContractCheck`.
  *
  * Suites run one at a time on purpose: the physics suite has load-sensitive
  * timing assertions (e.g. "a suspension raycast costs under 5 us") that flake
@@ -209,6 +211,193 @@ function runLint() {
   return violations;
 }
 
+
+// ─────────────────────────────────────────── 3. contract wiring
+
+/**
+ * The bug class this project keeps producing: a feature that is fully built and
+ * fully INERT. Three shipped before this check existed —
+ *
+ *   `car.effectMods`      seven handling multipliers, recomputed every step by
+ *                         gameplay, read by nobody. Five of seven status
+ *                         effects therefore did nothing at all.
+ *   `car.hazardSurfaceId` oil slicks published surface id 15 out-of-band; the
+ *                         vehicle grip lookup never read it, so oil was not
+ *                         slippery.
+ *   engine synth          read a CarDef field name no producer ever wrote.
+ *
+ * — and each cost real time to find by inspection. They share one shape, and it
+ * is mechanical rather than a judgement call: a name in the ARCHITECTURE.md
+ * contracts that only ever appears in ONE top-level `src/` directory is either a
+ * producer nobody consumes or a consumer nobody produces. A contract exists to
+ * be crossed; a field that never leaves its own system is not participating in
+ * one.
+ *
+ * Deliberately NOT a write-vs-read analysis. Classifying `Object.assign(car.mods,
+ * …)` or `car.mods ??= {}` correctly needs real parsing, and getting it wrong in
+ * either direction makes the rule untrustworthy. "Referenced from two different
+ * directories" needs no parsing and catches all three fixtures above.
+ *
+ * Known limits, stated so nobody over-trusts it: a field whose name is a common
+ * word (`id`, `name`, `position`) matches everywhere and is effectively
+ * unchecked — this rule produces false NEGATIVES there, never false positives.
+ */
+
+/** Words that appear on the VALUE side of a contract line, not field names. */
+const CONTRACT_NOISE = new Set([
+  'true', 'false', 'null', 'undefined', 'Infinity', 'NaN',
+  'THREE', 'Vector3', 'Quaternion', 'Matrix3', 'Box3', 'Group', 'Object3D',
+  'RigidBody', 'CollisionMesh', 'CenterlineSpline', 'SurfaceTable', 'CarDef',
+  'Wheel', 'InteractiveProp', 'bool', 'number', 'string',
+]);
+
+/**
+ * Fields that legitimately live in one directory.
+ *
+ * Every entry MUST carry a justification. An entry without one fails the lint —
+ * the allowlist is where "this is genuinely internal" gets distinguished from
+ * "I could not be bothered to wire it up", and an unexplained exemption is
+ * indistinguishable from the bug.
+ */
+const CONTRACT_ALLOW = {
+  invInertiaWorld:
+    'Solver working state. Consumers use applyInvInertia()/pointVelocity(), never the matrix.',
+  prevQuaternion:
+    'Interpolation snapshot. Consumers read it through getInterpolatedQuaternion() and '
+    + 'applyToObject3D(alpha), which is the supported API; the raw field is physics-internal.',
+  prevPosition:
+    'Same as prevQuaternion — consumed via getInterpolatedPosition()/applyToObject3D(alpha).',
+  applyControl:
+    'Both callers live in src/vehicle by design: CarSystem routes player input and AIDriver '
+    + 'drives the CPU cars. The contract documents it so other systems COULD drive a car, not '
+    + 'because one currently does.',
+  uses:
+    'Weapon bookkeeping. The consumed field is `ammo` (the documented {id,ammo,chargeT} core); '
+    + '`uses` records what the slot was granted with and nothing outside gameplay needs it.',
+  hasBomb:
+    'Redundant with the bomb:attach / bomb:transfer / bomb:explode events, which is how the '
+    + 'HUD actually tracks the holder (src/ui/hud/HUD.js:295-302). The feature works; the field '
+    + 'has no consumer because the events carry the same fact.',
+  bombFuse:
+    'Same as hasBomb — the fuse is carried by the bomb:* event payloads that the HUD consumes.',
+  shieldCharges:
+    'WEAKEST ENTRY, RE-EXAMINE BEFORE TRUSTING IT. Nothing displays the remaining hit count; '
+    + 'the HUD draws a shield icon only. Exempted because a missing readout is a UI design '
+    + 'choice rather than a broken wire, but if the shield is meant to show hits remaining then '
+    + 'this is a real gap and this entry should be deleted rather than kept.',
+};
+
+/**
+ * Field names from the ARCHITECTURE.md contracts. Two sources, deliberately:
+ *
+ *  1. the ```js fences under a `### `Name`` heading (Car, Wheel, RigidBody, …);
+ *  2. the first column of the tables under `### Fields <system> adds to <X>`,
+ *     which the document itself describes as public and "expected to be read".
+ *
+ * The table under `## Optional contract extensions` is EXCLUDED on purpose: that
+ * section defines fields a producer MAY supply, each with a documented fallback,
+ * so an unconsumed one is a documented degradation rather than a defect. Both of
+ * the real fixtures (`effectMods`, `hazardSurfaceId`) live in source 2 — a fence
+ * -only parser silently missed the exact bugs that motivated this rule.
+ */
+function contractFields(md) {
+  const out = new Map();                       // field → contract name
+  const addFence = (contract, body) => {
+    const clean = body.replace(/\/\/[^\n]*/g, '');            // strip line comments
+    for (const f of clean.matchAll(/\b([A-Za-z_]\w*)\s*[:(]/g)) {
+      if (!CONTRACT_NOISE.has(f[1])) out.set(f[1], contract);
+    }
+    // Bare identifier lists — `index, isFront, isLeft,` — lines with no `:`/`(`.
+    for (const line of clean.split('\n')) {
+      if (line.includes(':') || line.includes('(')) continue;
+      for (const part of line.split(',')) {
+        const t = part.trim();
+        if (/^[A-Za-z_]\w*$/.test(t) && !CONTRACT_NOISE.has(t)) out.set(t, contract);
+      }
+    }
+  };
+
+  // 1. `### `Name`` sections and their code fences.
+  const secRe = /^###\s+`(\w+)`[^\n]*\n([\s\S]*?)(?=^#{2,3}\s|\Z)/gm;
+  let m;
+  while ((m = secRe.exec(md))) {
+    for (const fence of m[2].matchAll(/```(?:js)?\n([\s\S]*?)```/g)) addFence(m[1], fence[1]);
+  }
+
+  // 2. `### Fields <system> adds to <X>` tables — public, must be consumed.
+  const tabRe = /^###\s+Fields\s+[^\n]*?adds to\s+`?(\w+)`?[^\n]*\n([\s\S]*?)(?=^#{2,3}\s|\Z)/gm;
+  while ((m = tabRe.exec(md))) {
+    const contract = m[1];
+    for (const row of m[2].split('\n')) {
+      if (!row.startsWith('|') || /^\|[\s-]+\|/.test(row)) continue;   // skip separators
+      const first = row.split('|')[1] ?? '';
+      for (const tick of first.matchAll(/`([^`]+)`/g)) {
+        for (const id of tick[1].matchAll(/[A-Za-z_]\w*/g)) {
+          if (!CONTRACT_NOISE.has(id[0])) out.set(id[0], contract);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function runContractCheck(files) {
+  console.log(C.bold('\n▸ Contract wiring\n'));
+  const md = readFileSync(join(ROOT, 'ARCHITECTURE.md'), 'utf8');
+  const fields = contractFields(md);
+
+  // field → set of top-level src/ directories that mention it
+  const seen = new Map();
+  const sources = files.filter((f) => !isSelfTest(f));
+  // Comments are stripped before matching. A field named only in a docblock is
+  // NOT wired up — and a leftover comment is exactly what a half-removed
+  // integration leaves behind, so counting them lets the rule be defeated by the
+  // very debris the bug produces. Found while validating: three `effectMods`
+  // mentions survived in JSDoc after the reads were removed, and the rule stayed
+  // green until this strip was added.
+  const stripComments = (src) => src
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const cache = sources.map((f) => ({
+    dir: relative(SRC, f).split('/')[0],
+    src: stripComments(readFileSync(f, 'utf8')),
+  }));
+
+  for (const [field] of fields) {
+    const re = new RegExp(`\\b${field}\\b`);
+    const dirs = new Set();
+    for (const c of cache) if (re.test(c.src)) dirs.add(c.dir);
+    seen.set(field, dirs);
+  }
+
+  const bad = [];
+  for (const [field, contract] of fields) {
+    if (CONTRACT_ALLOW[field]) continue;
+    const dirs = seen.get(field);
+    if (dirs.size === 0) bad.push({ field, contract, dirs, why: 'never referenced in src/' });
+    else if (dirs.size === 1) bad.push({ field, contract, dirs, why: `only in src/${[...dirs][0]}/` });
+  }
+
+  // An allowlist entry with no justification is itself a violation.
+  const unjustified = Object.entries(CONTRACT_ALLOW)
+    .filter(([, why]) => typeof why !== 'string' || why.trim().length < 10)
+    .map(([f]) => f);
+
+  console.log(C.dim(`  ${fields.size} contract fields parsed from ARCHITECTURE.md`));
+  if (bad.length === 0) console.log(`  ${C.green('✓')} every contract field is referenced from 2+ systems`);
+  else {
+    console.log(`  ${C.red('✗')} contract fields that never cross a system boundary ${C.dim(`(${bad.length})`)}`);
+    for (const b of bad.slice(0, 20)) {
+      console.log(C.dim(`      ${b.contract}.${b.field}  —  ${b.why}`));
+    }
+    if (bad.length > 20) console.log(C.dim(`      … and ${bad.length - 20} more`));
+  }
+  if (unjustified.length) {
+    console.log(`  ${C.red('✗')} allowlist entries without a justification: ${unjustified.join(', ')}`);
+  }
+  return bad.length + unjustified.length;
+}
+
 // ─────────────────────────────────────────────────────────── run
 
 console.log(C.bold('\nRC RUMBLE — repo check'));
@@ -216,8 +405,9 @@ console.log(C.dim(`${ALL_FILES.length} source files under src/`));
 
 const suites = runSuites();
 const violations = runLint();
+const contractGaps = runContractCheck(ALL_FILES);
 
-const ok = suites.failed === 0 && violations === 0;
+const ok = suites.failed === 0 && violations === 0 && contractGaps === 0;
 
 console.log(C.bold('\n▸ Summary\n'));
 console.log(`  self-tests  ${suites.totalPass} passed, ${suites.totalFail} failed  ${C.dim(`(${suites.count} suites)`)}`);

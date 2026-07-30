@@ -888,12 +888,17 @@ export class CameraDirector {
               enabled: true, intensity: want,
               focusDistance: this.pose.focusDistance,
               focusRange: this.pose.focusRange,
+              nearFalloff: this.pose.nearFalloff,
+              farFalloff: this.pose.farFalloff,
               maxBlur: this.pose.maxBlur,
             });
           } else {
             postfx.setDof({
               enabled: true, intensity: want, autoFocus: true,
-              focusRange: this.pose.focusRange, maxBlur: this.pose.maxBlur,
+              focusRange: this.pose.focusRange,
+              nearFalloff: this.pose.nearFalloff,
+              farFalloff: this.pose.farFalloff,
+              maxBlur: this.pose.maxBlur,
             });
           }
         } catch (err) { /* ignore */ }

@@ -19,6 +19,14 @@ const A0 = Math.PI * 0.76;
 const A1 = Math.PI * 2.24;
 const SWEEP = A1 - A0;
 
+/** Dial radii as fractions of the widget size. Shared by the bake and the
+ *  per-frame pass, which must agree exactly. */
+const R_OUTER = 0.475;
+const R_DIAL = 0.400;
+const R_TICK_OUT = 0.386;
+const R_TICK_IN = 0.336;
+const R_MINOR_IN = 0.358;
+
 export class Speedometer {
   constructor() {
     this.canvas = document.createElement('canvas');
@@ -65,11 +73,11 @@ export class Speedometer {
 
     const cx = s * 0.5;
     const cy = s * 0.5;
-    const rOuter = s * 0.475;
-    const rDial = s * 0.400;
-    const rTickOut = s * 0.386;
-    const rTickIn = s * 0.336;
-    const rMinorIn = s * 0.358;
+    const rOuter = s * R_OUTER;
+    const rDial = s * R_DIAL;
+    const rTickOut = s * R_TICK_OUT;
+    const rTickIn = s * R_TICK_IN;
+    const rMinorIn = s * R_MINOR_IN;
 
     // ── glass body ──
     const body = ctx.createRadialGradient(cx - s * 0.13, cy - s * 0.18, s * 0.03, cx, cy, rOuter);
@@ -229,7 +237,7 @@ export class Speedometer {
       ctx.lineWidth = s * 0.014;
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.arc(cx, cy, rDial - s * 0.005, A0, A0 + SWEEP * this.needle);
+      ctx.arc(cx, cy, R_DIAL * s - s * 0.005, A0, A0 + SWEEP * this.needle);
       ctx.stroke();
     }
 

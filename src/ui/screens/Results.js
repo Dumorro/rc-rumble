@@ -141,7 +141,9 @@ export class Results extends Screen {
       el('span.pl', { text: String(e.place) }),
       el('span', null,
         el('div.nm', { text: String(e.name ?? '—').toUpperCase() }),
-        el('div.cr', { text: `${e.carName ?? ''}${e.respawns ? ` · ${e.respawns} resets` : ''}` })),
+        el('div.cr', {
+          text: `${e.carName ?? ''}${e.respawns ? ` · ${e.respawns} reset${e.respawns > 1 ? 's' : ''}` : ''}`,
+        })),
       el('span.tt', { text: pointsTxt }),
       el(`span.bl${isFastest ? '.rec' : ''}`, { text: bestTxt }));
       this.grid.appendChild(row);

@@ -1,0 +1,49 @@
+- generic [active] [ref=f6e1]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic: Lap
+              - generic: Last
+              - generic: Best
+              - generic: Race
+      - generic [ref=f6e5]:
+        - generic [ref=f6e7]:
+          - generic [ref=f6e8]:
+            - generic [ref=f6e9]: Radio Controlled Mayhem
+            - generic [ref=f6e12]: 1:10 scale · full contact
+          - menu [ref=f6e14]:
+            - button "Race Single race" [ref=f6e15] [cursor=pointer]:
+              - generic [ref=f6e16]: Race
+              - generic [ref=f6e17]: Single race
+            - button "Time Trial Against the clock" [ref=f6e18] [cursor=pointer]:
+              - generic [ref=f6e19]: Time Trial
+              - generic [ref=f6e20]: Against the clock
+            - button "Championship Full season" [ref=f6e21] [cursor=pointer]:
+              - generic [ref=f6e22]: Championship
+              - generic [ref=f6e23]: Full season
+            - button "Options Video · audio" [ref=f6e24] [cursor=pointer]:
+              - generic [ref=f6e25]: Options
+              - generic [ref=f6e26]: Video · audio
+            - button "Controls Key bindings" [ref=f6e27] [cursor=pointer]:
+              - generic [ref=f6e28]: Controls
+              - generic [ref=f6e29]: Key bindings
+        - generic [ref=f6e30]:
+          - generic [ref=f6e31]: TIP · Ice is grip 0.18. Nothing you do with the steering will save you; only the throttle will.
+          - generic [ref=f6e32]:
+            - generic [ref=f6e33]:
+              - generic [ref=f6e34]: ↑↓
+              - text: Navigate
+            - generic [ref=f6e35]:
+              - generic [ref=f6e36]: ↵
+              - text: Select
+            - generic [ref=f6e37]:
+              - generic [ref=f6e38]: ESC
+              - text: Back
+        - generic [ref=f6e39]: build 0.1 · procedural everything
+  - generic:
+    - heading "RC RUMBLE" [level=1]
+    - generic: RADIO CONTROLLED MAYHEM
+    - generic: ready

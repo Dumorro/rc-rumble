@@ -691,8 +691,15 @@ ${cssVars()}
 .rcr-hud .tl { top: calc(var(--safe-t) + 14px);  left:  calc(var(--safe-l) + 18px + var(--tl-shift, 0px));
   transition: left var(--d-base) var(--e-out); }
 .rcr-hud .tr { top: calc(var(--safe-t) + 14px);  right: calc(var(--safe-r) + 18px); align-items: flex-end; }
-.rcr-hud .bl { bottom: calc(var(--safe-b) + 14px); left:  calc(var(--safe-l) + 18px); }
-.rcr-hud .br { bottom: calc(var(--safe-b) + 14px); right: calc(var(--safe-r) + 18px); align-items: flex-end; }
+.rcr-hud .bl { bottom: calc(var(--safe-b) + 14px + var(--touch-lift, 0px)); left:  calc(var(--safe-l) + 18px);
+  transition: bottom var(--d-base) var(--e-out); }
+.rcr-hud .br { bottom: calc(var(--safe-b) + 14px + var(--touch-lift, 0px)); right: calc(var(--safe-r) + 18px);
+  align-items: flex-end; transition: bottom var(--d-base) var(--e-out); }
+/* With the on-screen pad up, the bottom corners belong to the thumbs: lift the
+   minimap, the dial and the pickup slot clear of the wheel and the pedals. */
+.rcr-hud.touch-on { --touch-lift: 178px; }
+@media (max-height: 520px) { .rcr-hud.touch-on { --touch-lift: 128px; } }
+@media (max-width: 460px) { .rcr-hud.touch-on .hud-speedo { transform: scale(.82); transform-origin: 100% 100%; } }
 
 .hud-card {
   background: linear-gradient(180deg, rgba(9,15,26,.62), rgba(9,15,26,.42));
@@ -784,7 +791,7 @@ ${cssVars()}
 
 /* toasts */
 .hud-toasts {
-  position: absolute; left: 50%; top: 34%; transform: translateX(-50%);
+  position: absolute; left: 50%; top: 38%; transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center; gap: 7px; pointer-events: none;
 }
 .hud-toast {
@@ -804,8 +811,10 @@ ${cssVars()}
 .hud-toast.info { border-color: rgba(84,220,255,.5);  color: var(--c-cyan); box-shadow: 0 0 26px rgba(84,220,255,.24); }
 
 /* wrong way — deliberately loud */
+/* Sits below the toast column so a wrong-way warning and a "new best lap"
+   toast can be on screen at the same time without fighting. */
 .hud-wrongway {
-  position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%);
+  position: absolute; left: 50%; top: 62%; transform: translate(-50%, -50%);
   display: none; flex-direction: column; align-items: center; gap: 6px; pointer-events: none;
 }
 .hud-wrongway.show { display: flex; animation: rcr-ww 0.72s steps(1) infinite; }
@@ -985,9 +994,22 @@ ${cssVars()}
 .rcr-touch .btn.hot { background: rgba(84,220,255,.26); color: #fff; border-color: rgba(84,220,255,.6); transform: scale(.96); }
 .rcr-touch .btn.gas.hot { background: rgba(67,229,140,.28); border-color: rgba(67,229,140,.6); }
 .rcr-touch .btn.brk.hot { background: rgba(255,79,98,.28); border-color: rgba(255,79,98,.6); }
-.rcr-touch .aux { position: absolute; right: calc(var(--safe-r) + 14px); top: calc(var(--safe-t) + 60px);
-  display: flex; flex-direction: column; gap: 10px; }
-.rcr-touch .aux .btn { width: 60px; height: 46px; font-size: 9px; }
+/* Anchored to the middle of the right edge so it never fights the lap counter
+   at the top or the pedals at the bottom. */
+.rcr-touch .aux { position: absolute; right: calc(var(--safe-r) + 14px); top: 50%;
+  transform: translateY(-50%); display: flex; flex-direction: column; gap: 9px; }
+.rcr-touch .aux .btn { width: 58px; height: 44px; font-size: 9px; }
+
+/* Landscape phones are short: fold the aux column into two columns of small
+   buttons and shrink the wheel and pedals so nothing stacks off-screen. */
+@media (max-height: 520px) {
+  .rcr-touch .aux { display: grid; grid-template-columns: 1fr 1fr; gap: 7px;
+    top: calc(var(--safe-t) + 46px); transform: none; }
+  .rcr-touch .aux .btn { width: 50px; height: 34px; font-size: 8px; }
+  .rcr-touch .wheel { width: 130px; height: 118px; }
+  .rcr-touch .btn { width: 70px; height: 54px; }
+  .rcr-touch .pedals { gap: 8px; }
+}
 
 /* pause button, top-centre on touch */
 .rcr-pausebtn {
@@ -1023,8 +1045,8 @@ ${cssVars()}
   .rcr-hud { padding: calc(var(--safe-t) + 8px) calc(var(--safe-r) + 10px) calc(var(--safe-b) + 8px) calc(var(--safe-l) + 10px); }
   .rcr-hud .tl { top: calc(var(--safe-t) + 8px);  left:  calc(var(--safe-l) + 10px); }
   .rcr-hud .tr { top: calc(var(--safe-t) + 8px);  right: calc(var(--safe-r) + 10px); }
-  .rcr-hud .bl { bottom: calc(var(--safe-b) + 8px); left:  calc(var(--safe-l) + 10px); }
-  .rcr-hud .br { bottom: calc(var(--safe-b) + 8px); right: calc(var(--safe-r) + 10px); }
+  .rcr-hud .bl { bottom: calc(var(--safe-b) + 8px + var(--touch-lift, 0px)); left:  calc(var(--safe-l) + 10px); }
+  .rcr-hud .br { bottom: calc(var(--safe-b) + 8px + var(--touch-lift, 0px)); right: calc(var(--safe-r) + 10px); }
   .hud-ladder { display: none; }
   .res-row { grid-template-columns: 34px 1fr 76px; }
   .res-row .bl { display: none; }

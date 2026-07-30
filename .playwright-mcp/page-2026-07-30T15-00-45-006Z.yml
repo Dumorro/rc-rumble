@@ -1,0 +1,38 @@
+- generic [active] [ref=f8e1]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic: Lap
+              - generic: Last
+              - generic: Best
+              - generic: Race
+      - generic [ref=f8e5]:
+        - generic [ref=f8e7]:
+          - generic [ref=f8e8]:
+            - generic [ref=f8e9]: Radio Controlled Mayhem
+            - generic [ref=f8e12]: 1:10 scale · full contact
+          - menu [ref=f8e14]:
+            - button "Race Single race" [ref=f8e15] [cursor=pointer]:
+              - generic [ref=f8e16]: Race
+              - generic [ref=f8e17]: Single race
+            - button "Time Trial Against the clock" [ref=f8e18] [cursor=pointer]:
+              - generic [ref=f8e19]: Time Trial
+              - generic [ref=f8e20]: Against the clock
+            - button "Championship Full season" [ref=f8e21] [cursor=pointer]:
+              - generic [ref=f8e22]: Championship
+              - generic [ref=f8e23]: Full season
+            - button "Options Video · audio" [ref=f8e24] [cursor=pointer]:
+              - generic [ref=f8e25]: Options
+              - generic [ref=f8e26]: Video · audio
+            - button "Controls Key bindings" [ref=f8e27] [cursor=pointer]:
+              - generic [ref=f8e28]: Controls
+              - generic [ref=f8e29]: Key bindings
+        - generic [ref=f8e30]: TIP · Grass is grip 0.60 and gravel is 0.55. The scenic route is always slower.
+        - generic [ref=f8e32]: build 0.1 · procedural everything
+  - generic:
+    - heading "RC RUMBLE" [level=1]
+    - generic: RADIO CONTROLLED MAYHEM
+    - generic: ready

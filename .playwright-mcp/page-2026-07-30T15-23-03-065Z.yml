@@ -1,0 +1,45 @@
+- generic [active] [ref=f2e1]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic: Lap
+              - generic: Last
+              - generic: Best
+              - generic: Race
+      - generic [ref=f2e5]:
+        - generic [ref=f2e7]:
+          - generic [ref=f2e8]:
+            - generic [ref=f2e9]: Radio Controlled Mayhem
+            - generic [ref=f2e12]: 1:10 scale · full contact
+          - menu [ref=f2e14]:
+            - button "Race Single race" [ref=f2e15] [cursor=pointer]:
+              - generic [ref=f2e16]: Race
+              - generic [ref=f2e17]: Single race
+            - button "Time Trial Against the clock" [ref=f2e18] [cursor=pointer]:
+              - generic [ref=f2e19]: Time Trial
+              - generic [ref=f2e20]: Against the clock
+            - button "Championship Full season" [ref=f2e21] [cursor=pointer]:
+              - generic [ref=f2e22]: Championship
+              - generic [ref=f2e23]: Full season
+            - button "Options Video · audio" [ref=f2e24] [cursor=pointer]:
+              - generic [ref=f2e25]: Options
+              - generic [ref=f2e26]: Video · audio
+            - button "Controls Key bindings" [ref=f2e27] [cursor=pointer]:
+              - generic [ref=f2e28]: Controls
+              - generic [ref=f2e29]: Key bindings
+        - generic [ref=f2e30]:
+          - generic [ref=f2e31]: TIP · Grass is grip 0.60 and gravel is 0.55. The scenic route is always slower.
+          - generic [ref=f2e32]:
+            - generic [ref=f2e33]:
+              - generic [ref=f2e34]: ↑↓
+              - text: Navigate
+            - generic [ref=f2e35]:
+              - generic [ref=f2e36]: ↵
+              - text: Select
+            - generic [ref=f2e37]:
+              - generic [ref=f2e38]: ESC
+              - text: Back
+        - generic [ref=f2e39]: build 0.1 · procedural everything

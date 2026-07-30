@@ -342,7 +342,10 @@ export class CinematicCamera {
     out.shakeScale = 0.15;
     out.dofIntensity = 0.9;
     out.focusDistance = this._focus.value;
-    out.focusRange = 0.45;
+    // Wide shot, wide band — see CameraPose.focusRange for the measurement.
+    out.focusRange = 3.5;
+    out.nearFalloff = 10.0;
+    out.farFalloff = 20.0;
     out.maxBlur = 0.028;
     out.speedIntensity = 0.05;
     return out;
@@ -509,7 +512,9 @@ export class CinematicCamera {
     out.shakeScale = 0.35;
     out.dofIntensity = 1;
     out.focusDistance = this._focus.value;
-    out.focusRange = 0.30;
+    out.focusRange = 2.5;
+    out.nearFalloff = 7.0;
+    out.farFalloff = 14.0;
     out.maxBlur = 0.032;
     out.speedIntensity = 0.15;
     return out;
@@ -555,7 +560,9 @@ export class CinematicCamera {
     out.shakeScale = 0.3;
     out.dofIntensity = 1;
     out.focusDistance = this._focus.value;
-    out.focusRange = 0.34;
+    out.focusRange = 2.8;
+    out.nearFalloff = 8.0;
+    out.farFalloff = 16.0;
     out.maxBlur = 0.030;
     out.speedIntensity = 0;
     return out;

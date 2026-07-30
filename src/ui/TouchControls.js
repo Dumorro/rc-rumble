@@ -168,6 +168,8 @@ export class TouchControls {
     const show = this.enabled && this.active;
     setClass(this.root, 'on', show);
     setClass(this.pauseBtn, 'on', show);
+    // Tell the HUD to lift its bottom corners clear of the thumbs.
+    setClass(this.ui.hud?.root, 'touch-on', show);
     if (!show) {
       this.steer = this.steerTarget = 0;
       for (const b of Object.values(this._buttons)) { b._down = false; setClass(b, 'hot', false); }

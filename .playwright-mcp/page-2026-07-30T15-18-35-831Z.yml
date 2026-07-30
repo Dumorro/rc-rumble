@@ -1,0 +1,45 @@
+- generic [active] [ref=f20e1]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic: Lap
+              - generic: Last
+              - generic: Best
+              - generic: Race
+      - generic [ref=f20e5]:
+        - generic [ref=f20e7]:
+          - generic [ref=f20e8]:
+            - generic [ref=f20e9]: Radio Controlled Mayhem
+            - generic [ref=f20e12]: 1:10 scale · full contact
+          - menu [ref=f20e14]:
+            - button "Race Single race" [ref=f20e15] [cursor=pointer]:
+              - generic [ref=f20e16]: Race
+              - generic [ref=f20e17]: Single race
+            - button "Time Trial Against the clock" [ref=f20e18] [cursor=pointer]:
+              - generic [ref=f20e19]: Time Trial
+              - generic [ref=f20e20]: Against the clock
+            - button "Championship Full season" [ref=f20e21] [cursor=pointer]:
+              - generic [ref=f20e22]: Championship
+              - generic [ref=f20e23]: Full season
+            - button "Options Video · audio" [ref=f20e24] [cursor=pointer]:
+              - generic [ref=f20e25]: Options
+              - generic [ref=f20e26]: Video · audio
+            - button "Controls Key bindings" [ref=f20e27] [cursor=pointer]:
+              - generic [ref=f20e28]: Controls
+              - generic [ref=f20e29]: Key bindings
+        - generic [ref=f20e30]:
+          - generic [ref=f20e31]: TIP · Tap R to respawn at the last checkpoint. It costs about a second — a wall costs more.
+          - generic [ref=f20e32]:
+            - generic [ref=f20e33]:
+              - generic [ref=f20e34]: ↑↓
+              - text: Navigate
+            - generic [ref=f20e35]:
+              - generic [ref=f20e36]: ↵
+              - text: Select
+            - generic [ref=f20e37]:
+              - generic [ref=f20e38]: ESC
+              - text: Back
+        - generic [ref=f20e39]: build 0.1 · procedural everything

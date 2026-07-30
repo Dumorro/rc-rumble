@@ -37,7 +37,21 @@ export class CameraPose {
     this.dofIntensity = 0;
     /** Metres. 0 = let PostFX auto-focus on the player. */
     this.focusDistance = 0;
-    this.focusRange = 0.5;
+    /**
+     * Metres FULLY in focus either side of the focal plane, then metres to reach
+     * maximum blur in front of / behind that band.
+     *
+     * These are absolute distances, so they have to suit the scene, not the car.
+     * At 1:10 RC scale the cars are 0.3 m but a shot frames 10-30 m of room, and
+     * the intro shipped with range 0.45 / near 1.0: anything more than ~1.5 m in
+     * front of the aim point was at 100% blur, which is every floor tile between
+     * the lens and the grid. Measured on the garden intro — aim point 10.72 m,
+     * player car 9.42 m, so the SUBJECT ITSELF sat at 85% blur and no pixel in
+     * the frame was sharp. A shallow band is a macro lens; this is a wide shot.
+     */
+    this.focusRange = 3.0;
+    this.nearFalloff = 9.0;
+    this.farFalloff = 18.0;
     this.maxBlur = 0.024;
 
     /** 0..1 the rig's own idea of how fast things feel (drives post FX). */
@@ -56,6 +70,8 @@ export class CameraPose {
     this.dofIntensity = o.dofIntensity;
     this.focusDistance = o.focusDistance;
     this.focusRange = o.focusRange;
+    this.nearFalloff = o.nearFalloff;
+    this.farFalloff = o.farFalloff;
     this.maxBlur = o.maxBlur;
     this.speedIntensity = o.speedIntensity;
     this.cut = o.cut;
@@ -156,6 +172,8 @@ export function blendPose(out, a, b, t) {
   out.shakeScale = a.shakeScale + (b.shakeScale - a.shakeScale) * ep;
   out.dofIntensity = a.dofIntensity + (b.dofIntensity - a.dofIntensity) * ep;
   out.focusRange = a.focusRange + (b.focusRange - a.focusRange) * ep;
+  out.nearFalloff = a.nearFalloff + (b.nearFalloff - a.nearFalloff) * ep;
+  out.farFalloff = a.farFalloff + (b.farFalloff - a.farFalloff) * ep;
   out.maxBlur = a.maxBlur + (b.maxBlur - a.maxBlur) * ep;
   out.speedIntensity = a.speedIntensity + (b.speedIntensity - a.speedIntensity) * ep;
 

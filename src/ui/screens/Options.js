@@ -7,6 +7,7 @@
  * the menu is still open.
  */
 
+import CONFIG from '../../core/Config.js';
 import { el, setText } from '../Dom.js';
 import { THEME, withAlpha, displayTextCanvas } from '../Theme.js';
 import { Screen, MenuList } from '../Screen.js';
@@ -83,7 +84,7 @@ export class Options extends Screen {
       { type: 'label', label: '— HUD —' },
       { label: 'Minimap', type: 'toggle', get: get('showMinimap'), set: set('showMinimap') },
       { label: 'Standings Ladder', type: 'toggle', get: get('showLadder'), set: set('showLadder') },
-      {
+      CONFIG.debug && {
         label: 'Telemetry Panel', type: 'toggle',
         get: get('showTelemetry'),
         set: (v) => { S.set('showTelemetry', v); this.ui.telemetry?.setEnabled(v); },
@@ -102,7 +103,7 @@ export class Options extends Screen {
         onSelect: () => { S.reset(); this.menu.refresh(); this.ui.telemetry?.setEnabled(S.get('showTelemetry')); this.sound('ui/error', 0.6); },
       },
       { label: 'Back', onSelect: () => this.ui.pop() },
-    ], {
+    ].filter(Boolean), {
       onFocus: (spec) => setText(this.hint, spec?.hintText ?? ''),
     });
 

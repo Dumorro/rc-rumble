@@ -1,0 +1,158 @@
+- generic [ref=f20e1]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic: Lap
+              - generic: Last
+              - generic: Best
+              - generic: Race
+      - generic [ref=f20e4]:
+        - generic:
+          - generic:
+            - generic:
+              - generic: Radio Controlled Mayhem
+              - generic: 1:10 scale · full contact
+            - generic:
+              - menu:
+                - button "Race Single race" [active]:
+                  - generic: Race
+                  - generic: Single race
+                - button "Time Trial Against the clock":
+                  - generic: Time Trial
+                  - generic: Against the clock
+                - button "Championship Full season":
+                  - generic: Championship
+                  - generic: Full season
+                - button "Options Video · audio":
+                  - generic: Options
+                  - generic: Video · audio
+                - button "Controls Key bindings":
+                  - generic: Controls
+                  - generic: Key bindings
+          - generic:
+            - generic: TIP · Tap R to respawn at the last checkpoint. It costs about a second — a wall costs more.
+            - generic:
+              - generic:
+                - generic: ↑↓
+                - text: Navigate
+              - generic:
+                - generic: ↵
+                - text: Select
+              - generic:
+                - generic: ESC
+                - text: Back
+          - generic: build 0.1 · procedural everything
+        - generic:
+          - generic:
+            - generic:
+              - generic [ref=f20e44]:
+                - generic [ref=f20e45]: Step 1 of 2
+                - generic [ref=f20e47]: Single Race
+              - generic [ref=f20e49]:
+                - generic [ref=f20e50]: Livery
+                - generic [ref=f20e51]:
+                  - button "Stock livery" [ref=f20e52] [cursor=pointer]
+                  - button "#e23b2c" [ref=f20e53] [cursor=pointer]
+                  - button "#ff7a18" [ref=f20e54] [cursor=pointer]
+                  - button "#ffd400" [ref=f20e55] [cursor=pointer]
+                  - button "#8bc53f" [ref=f20e56] [cursor=pointer]
+                  - button "#2fa8dd" [ref=f20e57] [cursor=pointer]
+                  - button "#4de0ff" [ref=f20e58] [cursor=pointer]
+                  - button "#6a2fbf" [ref=f20e59] [cursor=pointer]
+                  - button "#d75cff" [ref=f20e60] [cursor=pointer]
+                  - button "#f2f4f7" [ref=f20e61] [cursor=pointer]
+                  - button "#14161b" [ref=f20e62] [cursor=pointer]
+            - generic:
+              - generic [ref=f20e63]:
+                - generic [ref=f20e65]:
+                  - generic [ref=f20e66]: AMATEUR
+                  - generic [ref=f20e67]: 4WD
+                  - generic [ref=f20e68]: METAL SHELL
+                - generic [ref=f20e69]: "Die-cast saloon. The benchmark: neutral, planted, honest."
+                - generic [ref=f20e71]:
+                  - generic [ref=f20e72]:
+                    - generic [ref=f20e73]: Speed
+                    - generic [ref=f20e76]: "3"
+                  - generic [ref=f20e77]:
+                    - generic [ref=f20e78]: Accel
+                    - generic [ref=f20e81]: "3"
+                  - generic [ref=f20e82]:
+                    - generic [ref=f20e83]: Grip
+                    - generic [ref=f20e86]: "3"
+                  - generic [ref=f20e87]:
+                    - generic [ref=f20e88]: Weight
+                    - generic [ref=f20e91]: "3"
+                - generic [ref=f20e92]: 114 km/h · 0-top 1.7s · 1.62 kg 53% front · wheelbase 202 mm
+              - generic [ref=f20e93]:
+                - generic [ref=f20e94]:
+                  - button "‹" [ref=f20e95] [cursor=pointer]
+                  - button "›" [ref=f20e105] [cursor=pointer]
+                  - generic [ref=f20e106]: 02 / 08
+                - menu [ref=f20e107]:
+                  - button "Confirm Pick a track" [ref=f20e108] [cursor=pointer]:
+                    - generic [ref=f20e109]: Confirm
+                    - generic [ref=f20e110]: Pick a track
+                  - button "Back Main menu" [ref=f20e111] [cursor=pointer]:
+                    - generic [ref=f20e112]: Back
+                    - generic [ref=f20e113]: Main menu
+                - generic [ref=f20e114]:
+                  - generic [ref=f20e115]:
+                    - generic [ref=f20e116]: ←→
+                    - text: Change car
+                  - generic [ref=f20e117]:
+                    - generic [ref=f20e118]: ↑↓
+                    - text: Section
+                  - generic [ref=f20e119]:
+                    - generic [ref=f20e120]: ↵
+                    - text: Confirm
+                  - generic [ref=f20e121]:
+                    - generic [ref=f20e122]: ESC
+                    - text: Back
+        - generic [ref=f20e125]:
+          - generic [ref=f20e126]: Step 2 of 2
+          - generic [ref=f20e130]:
+            - generic [ref=f20e133] [cursor=pointer]:
+              - generic [ref=f20e134]: TOY MUSEUM
+              - generic [ref=f20e135]:
+                - generic "EASY" [ref=f20e136]
+                - generic [ref=f20e142]: —
+                - generic [ref=f20e143]: 3 LAPS
+                - generic [ref=f20e144]: INDOOR
+              - generic [ref=f20e145]: Race across the polished floors of a grand museum. Thread the sauropod, ramp onto the display table and jump the marble stairs — or gamble on the staff corridor behind the curtain.
+            - generic [ref=f20e148] [cursor=pointer]:
+              - generic [ref=f20e149]: BACK GARDEN
+              - generic [ref=f20e150]:
+                - generic "MEDIUM" [ref=f20e151]
+                - generic [ref=f20e157]: —
+                - generic [ref=f20e158]: 3 LAPS
+                - generic [ref=f20e159]: OUTDOOR
+              - generic [ref=f20e160]: Gravel paths through a summer garden. Blind crest over the rockery, a run through the greenhouse, a soaked sprinkler arc, and a plank across the pond for anyone brave enough. Finishes with a jump off the deck.
+          - generic [ref=f20e161]:
+            - generic [ref=f20e162]:
+              - generic [ref=f20e163]: TOY MUSEUM
+              - generic [ref=f20e164]: Race across the polished floors of a grand museum. Thread the sauropod, ramp onto the display table and jump the marble stairs — or gamble on the staff corridor behind the curtain.
+              - generic [ref=f20e165]: BEST LAP --.--- · BEST RACE --:--.--- · WINS 0/0
+            - menu [ref=f20e167]:
+              - button "Laps 3" [ref=f20e168] [cursor=pointer]:
+                - generic [ref=f20e169]: Laps
+                - generic [ref=f20e170]: "3"
+              - button "Opponents 7" [ref=f20e174] [cursor=pointer]:
+                - generic [ref=f20e175]: Opponents
+                - generic [ref=f20e176]: "7"
+          - generic [ref=f20e180]:
+            - generic [ref=f20e181]:
+              - generic [ref=f20e182]:
+                - generic [ref=f20e183]: ←→↑↓
+                - text: Navigate
+              - generic [ref=f20e184]:
+                - generic [ref=f20e185]: ↵
+                - text: Race
+              - generic [ref=f20e186]:
+                - generic [ref=f20e187]: ESC
+                - text: Back
+            - menu [ref=f20e188]:
+              - button "Race" [ref=f20e189] [cursor=pointer]
+              - button "Back" [ref=f20e191] [cursor=pointer]
