@@ -122,8 +122,19 @@ async function loadChromium() {
       const mod = await import(pathToFileURL(cand.path).href);
       const chromium = mod.chromium ?? mod.default?.chromium;
       if (!chromium) continue;
-      // Full chromium first (real WebGL), headless shell as the fallback.
-      for (const channel of [undefined, 'chromium']) {
+      // `channel: 'chromium'` FIRST, and it matters enormously.
+      //
+      // Playwright's default for `headless: true` is chrome-headless-shell —
+      // the old headless binary. It renders WebGL through a software path and
+      // schedules requestAnimationFrame at a few hertz, so this game runs its
+      // fixed-step loop into the sub-step cap and the main thread stops
+      // answering `page.evaluate` at all. Two days of "the game never boots"
+      // came from exactly that: the same build, same flags, same URL was
+      // reporting 4 frames under the shell and 342 under full Chrome.
+      //
+      // `channel: 'chromium'` selects the full Chrome-for-Testing build, which
+      // uses new headless with a real compositor.
+      for (const channel of ['chromium', undefined]) {
         let exe = null;
         try { exe = channel ? chromium.executablePath({ channel }) : chromium.executablePath(); }
         catch { continue; }
@@ -285,6 +296,9 @@ async function main() {
 
   const browser = await chromium.launch({
     headless: !OPTS.headed,
+    // Chrome cold-starts slowly on a loaded machine; this has timed out at the
+    // 30 s default with a load average of 100 while the game itself was fine.
+    timeout: 180_000,
     ...(pw.channel ? { channel: pw.channel } : {}),
     // NOTE: do NOT force `--use-angle=swiftshader` here. Software rasterisation
     // turns the IBL prefilter and the first shader compiles into a multi-minute
@@ -329,23 +343,41 @@ async function main() {
  * @param {() => {ok:boolean}} fn evaluated in the page; must return `{ ok, … }`
  * @returns {Promise<{ok:boolean, last:object|null}>}
  */
-async function poll(page, fn, timeoutMs, { everyMs = 1000, evalMs = 20_000 } = {}) {
+async function poll(page, fn, timeoutMs, { everyMs = 500, evalMs = 30_000 } = {}) {
   const deadline = Date.now() + timeoutMs;
   let last = null;
   let stalls = 0;
+  let inflight = null;          // never more than one evaluate on the wire
+
   while (Date.now() < deadline) {
-    // `page.evaluate` never rejects when the page's main thread is wedged, so
-    // it needs its own timeout or the whole run hangs instead of reporting.
-    // The budget is generous: a cold track build is ~6 s of straight-line
-    // synchronous work, and evaluates issued during it simply queue.
-    last = await Promise.race([
-      page.evaluate(fn).catch(() => null),
-      new Promise((r) => setTimeout(() => r({ __stalled: true }), evalMs)),
+    if (!inflight) {
+      const started = Date.now();
+      // Tag the promise so a stalled evaluate can be RE-AWAITED next round
+      // instead of being abandoned. Abandoning it does not cancel anything —
+      // the call still runs in the page, and issuing a fresh one on every tick
+      // just queues work behind work, which is how a page that is merely busy
+      // (a 6 s synchronous track build) turns into a page that never answers.
+      inflight = { started, promise: page.evaluate(fn).then((v) => ({ v }), (e) => ({ e })) };
+    }
+    const settled = await Promise.race([
+      inflight.promise,
+      new Promise((r) => setTimeout(() => r(null), Math.min(everyMs, 2000))),
     ]);
-    if (last?.__stalled) { stalls++; last = null; }
-    if (last?.ok) return { ok: true, last, stalls };
-    if (OPTS.verbose) process.stdout.write(C.dim(`      poll ${JSON.stringify(last)}\n`));
-    await new Promise((r) => setTimeout(r, everyMs));
+    if (settled) {
+      inflight = null;
+      last = settled.e ? null : settled.v;
+      if (last?.ok) return { ok: true, last, stalls };
+      if (OPTS.verbose) {
+        const why = settled.e ? `error: ${String(settled.e.message ?? settled.e).split('\n')[0]}` : JSON.stringify(last);
+        process.stdout.write(C.dim(`      poll ${why}\n`));
+      }
+      await new Promise((r) => setTimeout(r, everyMs));
+    } else if (Date.now() - inflight.started > evalMs) {
+      // Genuinely wedged, not just busy. Drop it and try one more time.
+      stalls++;
+      inflight = null;
+      if (OPTS.verbose) process.stdout.write(C.dim(`      poll <no answer in ${evalMs} ms>\n`));
+    }
   }
   return { ok: false, last, stalls };
 }
